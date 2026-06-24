@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.// Corrected: removed redundant slash
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -15,9 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.// Corrected: removed redundant slash
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.// Corrected: removed redundant slash
 import androidx.compose.ui.text.style.TextAlign
 
 class MainActivity : ComponentActivity() {
@@ -110,9 +107,7 @@ fun ChatApp() {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
-                .navigationBarsPadding()
-                .imePadding(),
+                .padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -124,15 +119,13 @@ fun ChatApp() {
                 shape = MaterialTheme.shapes.large,
                 colors = TextFieldDefaults.colors(
                     focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    // Adjusted for Material3
+                    unfocusedIndicatorColor = Color.Transparent
                 )
             )
             Button(
                 onClick = {
                     if (text.isNotBlank()) {
                         messages = messages + Message(text, true)
-                        // Mock bot response
                         messages = messages + Message("Бот: [Имитация ответа на: $text]", false)
                         text = ""
                     }
@@ -141,6 +134,22 @@ fun ChatApp() {
             ) {
                 Text("Отправить")
             }
+        }
+
+        // Download Button (Restored)
+        Button(
+            onClick = { 
+                isDownloading = true
+                // Simple mock progress
+                downloadProgress = 0.6f 
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            enabled = !isDownloading,
+            shape = MaterialTheme.shapes.large
+        ) {
+            Text(if (isDownloading) "Загрузка..." else "Скачать модель (Имитация)")
         }
 
         // Signature
@@ -170,8 +179,7 @@ fun MessageBubble(msg: Message) {
     ) {
         Surface(
             color = if (msg.isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-            shape = MaterialTheme.shapes.// Fixed: removed redundant slash
-            medium,
+            shape = MaterialTheme.shapes.medium,
             modifier = Modifier.wrapContentSize()
         ) {
             Text(
@@ -183,25 +191,3 @@ fun MessageBubble(msg: Message) {
         }
     }
 }
-
-// Helper to simulate download
-@Composable
-fun DownloadButton(onDownload: () -> Unit, isDownloading: Boolean, progress: Float) {
-    Button(
-        onClick = onDownload,
-        modifier = Modifier.fillMaxWidth(),
-        enabled = !isDownloading,
-        shape = MaterialTheme.shapes.large
-    ) {
-        Text(if (isDownloading) "Загрузка..." else "Скачать модель (Имитация)")
-    }
-}
-```
-
-// I noticed that I missed the actual call to the DownloadButton in the main layout. Fixing that now in a separate call or combining.
-// Actually, looking at the code, I put the progress bar but the button needs to be added back to the layout.
-// I'll do a final fix in the next turn.
-
-// WAIT - I saw some broken comments in my code output (double slashes in imports). I need to be very careful.
-
-// RE-DOING the file carefully.
