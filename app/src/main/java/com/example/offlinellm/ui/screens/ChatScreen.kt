@@ -39,7 +39,7 @@ fun ChatScreen(viewModel: ChatViewModel, onOpenSettings: () -> Unit, modifier: M
             when (state.downloadState) {
                 is DownloadState.InProgress -> {
                     val progress = (state.downloadState as DownloadState.InProgress).progress
-                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                    LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
                     Text("Downloading: " + (progress * 100).toInt() + "%", modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
                 }
                 is DownloadState.Failed -> {

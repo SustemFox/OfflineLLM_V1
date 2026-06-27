@@ -115,6 +115,17 @@ class ChatViewModel(
         }
     }
 
+    fun clearChat() {
+        _uiState.value = _uiState.value.copy(
+            messages = listOf(
+                Message(
+                    text = "Chat cleared. Start a new conversation.",
+                    sender = Message.Sender.SYSTEM
+                )
+            )
+        )
+    }
+
     private fun addMessage(message: Message) {
         _uiState.value = _uiState.value.copy(messages = _uiState.value.messages + message)
     }
