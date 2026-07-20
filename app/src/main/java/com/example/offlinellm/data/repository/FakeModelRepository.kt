@@ -10,35 +10,40 @@ import kotlin.random.Random
 class FakeModelRepository : ModelRepository {
 
     private val models = listOf(
-        LlmModel("demo-tiny", "Demo Tiny (fake)", 12_000_000, isDownloaded = true),
-        LlmModel("demo-small", "Demo Small (fake)", 120_000_000),
-        LlmModel("demo-medium", "Demo Medium (fake)", 700_000_000)
+        LlmModel("demo-tiny", "Demo Tiny (fake)", 12_000_000, isDownloaded = true, parameterCount = "0.1B"),
+        LlmModel("demo-small", "Demo Small (fake)", 120_000_000, parameterCount = "1B"),
+        LlmModel("demo-medium", "Demo Medium (fake)", 700_000_000, parameterCount = "7B")
     )
 
     private val downloadedModels = mutableSetOf("demo-tiny")
 
-    override fun getAvailableModels(): List<LlmModel> {
-        return models.map { it.copy(isDownloaded = downloadedModels.contains(it.id)) }
-    }
+    override fun getAvailableModels(): List<LlmModel> =
+        models.map { it.copy(isDownloaded = downloadedModels.contains(it.id)) }
 
-    override suspend fun downloadModel(modelId: String): Flow<Float> = flow {
-        val model = models.find { it.id == modelId }
-            ?: throw IllegalArgumentException("Model not found: $modelId")
+    override fun getDownloadedModels(): List<LlmModel> =
+        models.filter { downloadedModels.contains(it.id) }
 
+    override fun getActiveBackend(): String = "Fake (CPU)"
+
+    override fun isModelDownloaded(modelId: String): Boolean =
+        downloadedModels.contains(modelId)
+
+    override fun getModelPath(modelId: String): String? = null
+
+    override fun refreshModels() {}
+
+    override suspend fun downloadModel(modelId: String, downloadUrl: String): Flow<Float> = flow {
         val steps = 20
         repeat(steps) { step ->
             delay(150)
-            val progress = (step + 1) / steps.toFloat()
-            emit(progress)
-            if (Random.nextFloat() < 0.03f) {
-                throw IllegalStateException("Network error simulated")
-            }
+            emit((step + 1).toFloat() / steps)
+            if (Random.nextFloat() < 0.03f) throw IllegalStateException("Simulated network error")
         }
         downloadedModels.add(modelId)
         emit(1f)
     }
 
-    override fun isModelDownloaded(modelId: String): Boolean {
-        return downloadedModels.contains(modelId)
+    override suspend fun deleteModel(modelId: String) {
+        downloadedModels.remove(modelId)
     }
 }
