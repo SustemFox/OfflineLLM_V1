@@ -18,36 +18,31 @@ import com.example.offlinellm.ui.theme.OfflineLlmTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            AppRoot()
-        }
+        setContent { AppRoot() }
     }
 }
 
 @Composable
 fun AppRoot() {
     val navController = rememberNavController()
-    val viewModel: ChatViewModel = viewModel(factory = ChatViewModel.Factory)
-
+    val viewModel: ChatViewModel = viewModel(
+        factory = ChatViewModel.Factory(application = androidx.compose.ui.platform.LocalContext.current.applicationContext as android.app.Application)
+    )
     val state by viewModel.uiState.collectAsState()
 
-    OfflineLlmTheme(
-        darkTheme = state.isDarkMode,
-        primaryColor = state.primaryColor
-    ) {
-        NavHost(
-            navController = navController,
-            startDestination = "chat"
-        ) {
+    OfflineLlmTheme(darkTheme = state.isDarkMode, primaryColor = state.primaryColor) {
+        NavHost(navController = navController, startDestination = "chat") {
             composable("chat") {
                 ChatScreen(
                     viewModel = viewModel,
+                    state = state,
                     onOpenSettings = { navController.navigate("settings") }
                 )
             }
             composable("settings") {
                 SettingsScreen(
                     viewModel = viewModel,
+                    state = state,
                     onBack = { navController.popBackStack() }
                 )
             }
