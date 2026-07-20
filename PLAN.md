@@ -1,91 +1,52 @@
 # OfflineLLM_V1 — План проекта
 
 ## Цель
-Создать Android-приложение для локального (оффлайн) использования LLM. Сейчас приложение в режиме прототипа с имитацией ответов, но архитектура готовится так, чтобы заменить фейковые реализации на настоящий локальный LLM без переписывания UI.
+Создать Android-приложение для локального (оффлайн) использования LLM с аппаратным ускорением.
+Телефон выступает одновременно как чат-интерфейс и как хост для OpenAI-совместимого API.
 
-## Архитектурные принципы
-- **Модульность**: каждый слой отделён от другого. Можно удалить или заменить любой модуль.
-- **Интерфейсы в domain**: UI и ViewModel зависят только от интерфейсов `LlmRepository` и `ModelRepository`.
-- **DI-заглушка**: `AppProvider` отдаёт реализации. Для продакшена заменить на Koin/Hilt.
-- **Фейковые реализации**: позволяют разрабатывать UI без наличия модели.
-
-## Структура проекта
+## Архитектура
 
 ```
 com.example.offlinellm
 ├── data
 │   ├── repository
-│   │   ├── FakeLlmRepository.kt      ← имитация ответов LLM
-│   │   ├── FakeModelRepository.kt    ← имитация загрузки модели
-│   │   └── LocalLlmRepository.kt     ← заглушка под реальный LLM
-│   └── service                       ← (пока пусто, можно добавить DownloadService)
+│   │   ├── FakeLlmRepository.kt        ← имитация для разработки UI
+│   │   ├── FakeModelRepository.kt      ← имитация загрузки
+│   │   ├── LocalLlmRepository.kt       ← ✅ реальный llama.cpp через JNI
+│   │   └── ModelRepositoryImpl.kt      ← ✅ реальный менеджер моделей (GGUF)
+│   └── service
+│       └── LlmHttpServer.kt            ← ✅ HTTP-сервер (Ktor + OpenAI API)
 ├── di
-│   └── AppProvider.kt                ← простая фабрика зависимостей
+│   └── AppProvider.kt                   ← ✅ DI с переключением fake/real
 ├── domain
 │   ├── model
 │   │   ├── DownloadState.kt
-│   │   ├── LlmModel.kt
+│   │   ├── LlmModel.kt                 ← ✅ обновлено (downloadUrl, backend, paramCount)
 │   │   └── Message.kt
 │   └── repository
 │       ├── LlmRepository.kt
-│       └── ModelRepository.kt
-├── ui
-│   ├── chat
-│   │   ├── ChatViewModel.kt
-│   │   └── TypingIndicator.kt
-│   └── theme
-│       └── Theme.kt
-└── MainActivity.kt                    ← точка входа (сейчас требует рефактора)
+│       └── ModelRepository.kt          ← ✅ обновлён (getActiveBackend, getModelPath)
+├── llama
+│   ├── LlamaBridge.kt                  ← ✅ JNI интерфейс к нативному llama.cpp
+│   ├── LlamaInferenceEngine.kt         ← ✅ Kotlin обёртка с Flow-стримингом
+│   └── ModelLoader.kt                  ← ✅ Сканер GGUF + рекомендованные модели
+└── MainActivity.kt
 ```
 
-## Текущий статус
-См. `STATUS.md`.
+## Движок: llama.cpp с аппаратным ускорением
 
-## Этапы
+| Бэкенд | Технология | Устройства |
+|--------|-----------|------------|
+| 🥇 Hexagon NPU | Qualcomm HTP v73+ | Snapdragon (855, 8 Gen 1/2/3...) |
+| 🥈 Vulkan GPU | Adreno GPU | Все Android с Vulkan |
+| 🥉 OpenCL GPU | Adreno GPU (legacy) | Snapdragon 845 и старше |
+| 🔄 CPU NEON | ARM NEON | Все устройства (fallback) |
 
-### Этап 1 — Рефактор прототипа (в процессе, ветка `feature/modular-architecture`)
-- [x] Создать domain-модели и интерфейсы репозиториев
-- [x] Создать `FakeLlmRepository` с потоковой имитацией ответов
-- [x] Создать `FakeModelRepository` с имитацией загрузки
-- [x] Создать `LocalLlmRepository` как заглушку под реальный LLM
-- [x] Создать `AppProvider` для DI
-- [x] Создать `ChatViewModel` с `StateFlow`
-- [x] Создать `OfflineLlmTheme` и `TypingIndicator`
-- [ ] Переписать `MainActivity.kt` — убрать старый монолитный код
-- [ ] Создать `ChatScreen` с полем ввода и списком сообщений
-- [ ] Создать `SettingsScreen` с выбором модели/цвета
-- [ ] Добавить `Navigation` для перехода между чатом и настройками
-- [ ] Обновить `AndroidManifest.xml` при необходимости
-- [ ] Протестировать сборку и работу фейкового режима
+## HTTP-сервер (хостинг моделей)
 
-### Этап 2 — UI и UX
-- [ ] Экран списка моделей
-- [ ] Индикатор загрузки модели
-- [ ] История сообщений (сохранение между сессиями)
-- [ ] Настройки темы (тёмная/светлая, цвет акцента)
-- [ ] Обработка ошибок с понятными сообщениями
+- OpenAI-compatible API (`/v1/chat/completions`, `/v1/models`)
+- Любой клиент может подключиться (Kai, OpenClaw, curl)
+- Порт 8080 по умолчанию
 
-### Этап 3 — Реальный локальный LLM
-- [ ] Выбрать движок: llama.cpp (JNI), MediaPipe LLM Inference, ONNX Runtime, или TensorFlow Lite
-- [ ] Реализовать `LocalLlmRepository.generateResponse()`
-- [ ] Добавить загрузку/импорт .gguf / .bin моделей
-- [ ] Добавить кэширование моделей на диске
-- [ ] Проверить работу без интернета
-
-### Этап 4 — Продакшен
-- [ ] Заменить `AppProvider` на Hilt или Koin
-- [ ] Добавить Room для истории чатов
-- [ ] Добавить DataStore для настроек
-- [ ] Настроить ProGuard/R8
-- [ ] Подписать release-сборку
-
-## Как продолжить с другого устройства
-1. Открыть ветку `feature/modular-architecture`.
-2. Прочитать `STATUS.md` — там последнее состояние и блокеры.
-3. Смотреть `TODO.md` — там список ближайших задач.
-4. Если не ясно, с какой задачи начать — брать первую невыполненную задачу из Этапа 1.
-
-## Правила ведения плана
-- Любой существенный прогресс фиксируется в `STATUS.md`.
-- Завершённые задачи помечать `[x]` в `TODO.md` и `PLAN.md`.
-- Новые идеи — в раздел «Идеи на будущее» `STATUS.md`.
+## Статус
+См. STATUS.md
