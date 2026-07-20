@@ -1,35 +1,79 @@
-name: Android CI
+name: Build OfflineLLM APK
 
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+
+env:
+  GRADLE_VERSION: "8.2"
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: set up JDK 17
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: 'gradle'
 
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v3
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: 8.2
+          gradle-version: ${{ env.GRADLE_VERSION }}
 
-      - name: Build with Gradle
-        run: gradle :app:assembleDebug
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build APK
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.build_type }}" = "release" ]; then
+            ./gradlew :app:assembleRelease
+          else
+            ./gradlew :app:assembleDebug
+          fi
+
+      - name: Check APK size
+        run: |
+          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+            ls -lh app/build/outputs/apk/debug/app-debug.apk
+          elif [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            ls -lh app/build/outputs/apk/release/app-release.apk
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: OfflineLLM-${{ github.sha }}-${{ github.event_name == 'workflow_dispatch' && inputs.build_type || 'debug' }}
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: warn
+
+      - name: Show build info
+        run: |
+          echo "🎯 Build completed!"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Backend: Vulkan + OpenCL + CPU"
