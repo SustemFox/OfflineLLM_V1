@@ -6,12 +6,10 @@ import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import io.ktor.server.plugins.contentnegotiation.*
+import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.Serializable
@@ -33,10 +31,7 @@ data class ModelsResponse(
 )
 
 @Serializable
-data class ChatMessage(
-    val role: String,
-    val content: String
-)
+data class ChatMessage(val role: String, val content: String)
 
 @Serializable
 data class ChatCompletionRequest(
@@ -78,8 +73,7 @@ class LlmHttpServer(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var server: ApplicationEngine? = null
-
-    private val json = Json {
+    private val jsonEngine = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
         prettyPrint = false
@@ -88,38 +82,31 @@ class LlmHttpServer(
     fun start() {
         server = embeddedServer(Netty, port = port) {
             install(ContentNegotiation) {
-                json(json)
+                json(jsonEngine)
             }
             routing {
                 get("/v1/models") {
-                    call.respond(
-                        ContentType.Application.Json,
-                        json.encodeToString(
-                            ModelsResponse(data = listOf(ModelInfo(id = modelId())))
-                        )
+                    val response = ModelsResponse(data = listOf(ModelInfo(id = modelId())))
+                    call.respondText(
+                        contentType = ContentType.Application.Json,
+                        text = jsonEngine.encodeToString(response)
                     )
                 }
                 post("/v1/chat/completions") {
-                    val request = call.receive<ChatCompletionRequest>()
-                    val prompt = request.messages.joinToString("\n") { "${it.role}: ${it.content}" }
+                    val text = call.receiveText()
+                    val req = jsonEngine.decodeFromString<ChatCompletionRequest>(text)
+                    val prompt = req.messages.joinToString("\n") { "${it.role}: ${it.content}" }
                     val result = buildString {
                         val flow = generate(prompt)
-                        kotlinx.coroutines.flow.collect(flow) { token ->
-                            append(token)
-                        }
+                        kotlinx.coroutines.flow.collect(flow) { append(it) }
                     }
-                    call.respond(
-                        ContentType.Application.Json,
-                        json.encodeToString(
-                            ChatCompletionResponse(
-                                model = request.model.ifEmpty { modelId() },
-                                choices = listOf(
-                                    ChatChoice(
-                                        message = ChatMessage("assistant", result)
-                                    )
-                                )
-                            )
-                        )
+                    val response = ChatCompletionResponse(
+                        model = req.model.ifEmpty { modelId() },
+                        choices = listOf(ChatChoice(message = ChatMessage("assistant", result)))
+                    )
+                    call.respondText(
+                        contentType = ContentType.Application.Json,
+                        text = jsonEngine.encodeToString(response)
                     )
                 }
             }
