@@ -20,7 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Refresh
@@ -86,7 +86,7 @@ fun SettingsScreen(
                 title = { Text("Настройки") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Назад")
                     }
                 },
                 actions = {
@@ -347,7 +347,7 @@ fun SettingsScreen(
                                 Spacer(modifier = Modifier.height(8.dp))
                                 if (ds.progress > 0f) {
                                     LinearProgressIndicator(
-                                        progress = { ds.progress.coerceIn(0f, 1f) },
+                                        progress = ds.progress.coerceIn(0f, 1f),
                                         modifier = Modifier.fillMaxWidth(),
                                     )
                                 } else {
@@ -606,7 +606,7 @@ private fun ModelCard(
                 Spacer(modifier = Modifier.height(8.dp))
                 if (downloadProgress > 0f) {
                     LinearProgressIndicator(
-                        progress = { downloadProgress.coerceIn(0f, 1f) },
+                        progress = downloadProgress.coerceIn(0f, 1f),
                         modifier = Modifier.fillMaxWidth(),
                     )
                 } else {

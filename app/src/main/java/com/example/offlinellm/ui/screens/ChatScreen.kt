@@ -94,7 +94,7 @@ fun ChatScreen(
                 is DownloadState.InProgress -> {
                     if (ds.progress > 0f) {
                         LinearProgressIndicator(
-                            progress = { ds.progress.coerceIn(0f, 1f) },
+                            progress = ds.progress.coerceIn(0f, 1f),
                             modifier = Modifier.fillMaxWidth(),
                         )
                     } else {
