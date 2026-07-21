@@ -284,18 +284,19 @@ fun SettingsScreen(
 
         if (state.isLoading) {
             item {
-            Box(
-                modifier = Modifier.fillMaxWidth().padding(32.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Загрузка моделей...")
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator()
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Загрузка моделей...")
+                    }
                 }
             }
-            }
-        } else {
+        }
+        if (!state.isLoading) {
             items(state.availableModels) { model ->
                 ModelCard(
                         model = model,
