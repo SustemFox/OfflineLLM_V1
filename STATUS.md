@@ -1,7 +1,7 @@
 # OfflineLLM_V1 — Статус
 
 > Текущая ветка: `main`
-> Статус: ✅ Готов к сборке в CI
+> Статус: 🔧 UI + download progress fixed (2026-07-22) — ждём зелёный CI
 
 ## Что сделано
 
@@ -14,34 +14,28 @@
 ### HTTP-сервер (хостинг)
 - ✅ OpenAI-compatible API (`/v1/chat/completions`)
 - ✅ Ktor + Netty, порт 8080
-- ✅ Подключение Kai / OpenClaw по http://телефон:8080/v1
+- ✅ `generate` callback прокинут из ChatViewModel в реальный llmRepository
 
-### Модели
-- ✅ Сканер GGUF на устройстве
-- ✅ Загрузка с HuggingFace
-- ✅ Рекомендованные модели (Qwen 2.5, Llama 3.2)
+### Модели / скачивание
+- ✅ Сканер GGUF + recommended list (Qwen / Llama)
+- ✅ Download с progress (throttled emit), cancel, `.gguf.part` temp
+- ✅ HF redirects + User-Agent + Accept-Encoding: identity
+- ✅ quantType / parameterCount сохраняются в LlmModel
+- ✅ deleteModel реально удаляет файл
+- ✅ «Выбрать» грузит модель в real llama.cpp engine
 
 ### UI
-- ✅ Compose-чаты с Flow-стримингом
-- ✅ Индикатор бэкенда (NPU/GPU/CPU)
-- ✅ Управление моделями
-- ✅ Вкл/выкл HTTP-сервера
+- ✅ Compose chat + settings (scrollable LazyColumn — fixed receiver bug)
+- ✅ TopAppBar назад, SAF folder picker, theme toggle
+- ✅ Download banner + per-card progress + indeterminate при unknown size
+- ✅ In-app logger viewer
 
 ### CI/CD
-- ✅ GitHub Actions собирает APK при пуше в main
-- ✅ APK доступен как артефакт сборки
-- ✅ Ручной запуск через workflow_dispatch (debug/release)
+- ✅ GitHub Actions собирает release APK
+- 🔧 Проверить run после UI fix commit
 
-## Требуется
-1. Скачать APK из Actions и установить на OnePlus 7
-2. Скачать GGUF-модель (например, Qwen 2.5 1.5B Q4 — 930MB)
-3. Положить в `Android/data/com.example.offlinellm/files/models/`
-4. Запустить, выбрать модель, общаться
-5. В настройках включить HTTP-сервер → подключить Kai
-
-## Производительность (ожидаемая, OnePlus 7)
-| Модель | Бэкенд  | t/s |
-|--------|---------|-----|
-| 1.5B Q4 | Vulkan  | ~15-25 |
-| 3B Q4   | Vulkan  | ~8-12 |
-| 7B Q4   | Vulkan  | ~4-7 |
+## Как пользоваться
+1. Скачать APK из Actions
+2. ⚙ → Скачать модель (напр. Qwen 2.5 1.5B)
+3. «Выбрать» → дождаться загрузки в движок
+4. Чат / HTTP-сервер для Kai

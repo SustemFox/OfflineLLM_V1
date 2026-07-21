@@ -28,9 +28,12 @@ class FakeModelRepository : ModelRepository {
     override fun isModelDownloaded(modelId: String): Boolean =
         downloadedModels.contains(modelId)
 
-    override fun getModelPath(modelId: String): String? = null
+    override fun getModelPath(modelId: String): String? =
+        if (downloadedModels.contains(modelId)) "/fake/$modelId.gguf" else null
 
     override fun refreshModels() {}
+
+    override fun cancelDownload(modelId: String) {}
 
     override suspend fun downloadModel(modelId: String, downloadUrl: String): Flow<Float> = flow {
         val steps = 20
