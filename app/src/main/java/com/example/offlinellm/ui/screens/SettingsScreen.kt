@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.offlinellm.data.local.ModelsDirectoryManager
+import com.example.offlinellm.domain.model.DownloadState
 import com.example.offlinellm.domain.model.LlmModel
 import com.example.offlinellm.ui.chat.ChatViewModel
 
@@ -288,7 +289,7 @@ private fun ModelCard(
             if (isDownloading) {
                 Spacer(modifier = Modifier.height(8.dp))
                 LinearProgressIndicator(
-                    progress = { downloadProgress },
+                    progress = downloadProgress,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(4.dp))
