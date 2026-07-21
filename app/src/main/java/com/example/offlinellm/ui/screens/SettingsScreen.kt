@@ -152,6 +152,7 @@ fun SettingsScreen(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun ModelCard(
     model: LlmModel,
     isActive: Boolean,
