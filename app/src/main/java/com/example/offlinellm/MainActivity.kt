@@ -49,7 +49,9 @@ fun AppRoot() {
                     onDownloadModel = { viewModel.downloadModel(it) },
                     onDeleteModel = { viewModel.deleteModel(it) },
                     onSelectModel = { viewModel.selectModel(it) },
-                    onRefresh = { viewModel.refreshModels() }
+                    onRefresh = { viewModel.refreshModels() },
+                    onSetStoragePath = { viewModel.setCustomStoragePath(it) },
+                    onResetStoragePath = { viewModel.resetStoragePath() }
                 )
             }
         }

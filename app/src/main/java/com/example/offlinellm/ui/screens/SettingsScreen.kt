@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.example.offlinellm.data.local.ModelsDirectoryManager
 import com.example.offlinellm.domain.model.LlmModel
 import com.example.offlinellm.ui.chat.ChatViewModel
 
@@ -19,7 +20,9 @@ fun SettingsScreen(
     onDownloadModel: (LlmModel) -> Unit,
     onDeleteModel: (LlmModel) -> Unit,
     onSelectModel: (LlmModel) -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onSetStoragePath: (String?) -> Unit = {},
+    onResetStoragePath: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -100,6 +103,85 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Storage Section
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Хранилище моделей",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = state.storagePath,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onResetStoragePath,
+                        modifier = Modifier.weight(1f),
+                        enabled = state.hasCustomStorage
+                    ) {
+                        Text("Сбросить")
+                    }
+                }
+                var showPathInput by remember { mutableStateOf(false) }
+                var pathText by remember { mutableStateOf("") }
+
+                if (!state.hasCustomStorage) {
+                    Button(
+                        onClick = { showPathInput = !showPathInput },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Указать свою папку")
+                    }
+                }
+
+                if (showPathInput) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = pathText,
+                        onValueChange = { pathText = it },
+                        label = { Text("Путь к папке") },
+                        placeholder = { Text("/sdcard/OfflineLLM/models") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            if (pathText.isNotBlank()) {
+                                onSetStoragePath(pathText.trim())
+                                showPathInput = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Применить")
+                    }
+                }
+
+                if (state.hasCustomStorage) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Ты можешь вручную указать путь к папке с моделями на SD-карте или в общей памяти.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 

@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.offlinellm.data.service.LlmHttpServer
 import com.example.offlinellm.di.AppProvider
 import com.example.offlinellm.domain.model.DownloadState
+import com.example.offlinellm.data.local.ModelsDirectoryManager
 import com.example.offlinellm.domain.model.LlmModel
 import com.example.offlinellm.domain.model.Message
 import com.example.offlinellm.llama.ModelLoader
@@ -33,6 +34,10 @@ class ChatViewModel(
 
     init {
         AppProvider.initFake(application)
+        _uiState.value = _uiState.value.copy(
+            storagePath = ModelsDirectoryManager.getStorageLabel(application),
+            hasCustomStorage = ModelsDirectoryManager.hasCustomPath(application)
+        )
         loadModels()
     }
 
@@ -263,8 +268,28 @@ class ChatViewModel(
         val availableModels: List<LlmModel> = emptyList(),
         val selectedModel: LlmModel? = null,
         val downloadState: DownloadState = DownloadState.Idle,
-        val activeBackend: String = "CPU"
+        val activeBackend: String = "CPU",
+        val storagePath: String = "",
+        val hasCustomStorage: Boolean = false
     )
+
+    fun setCustomStoragePath(path: String?) {
+        ModelsDirectoryManager.setCustomPath(getApplication(), path)
+        _uiState.value = _uiState.value.copy(
+            storagePath = ModelsDirectoryManager.getStorageLabel(getApplication()),
+            hasCustomStorage = ModelsDirectoryManager.hasCustomPath(getApplication())
+        )
+        loadModels()
+    }
+
+    fun resetStoragePath() {
+        ModelsDirectoryManager.resetToDefault(getApplication())
+        _uiState.value = _uiState.value.copy(
+            storagePath = ModelsDirectoryManager.getStorageLabel(getApplication()),
+            hasCustomStorage = false
+        )
+        loadModels()
+    }
 
     class Factory(private val application: Application) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

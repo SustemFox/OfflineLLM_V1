@@ -1,6 +1,7 @@
 package com.example.offlinellm.llama
 
 import android.content.Context
+import com.example.offlinellm.data.local.ModelsDirectoryManager
 import java.io.File
 
 data class GgufModelInfo(
@@ -15,10 +16,8 @@ data class GgufModelInfo(
 
 object ModelLoader {
 
-    private const val MODELS_DIR = "models"
-
     fun getModelsDirectory(context: Context): File =
-        File(context.filesDir, MODELS_DIR).also { it.mkdirs() }
+        ModelsDirectoryManager.getModelsDirectory(context)
 
     fun scanLocalModels(context: Context): List<GgufModelInfo> {
         val modelsDir = getModelsDirectory(context)

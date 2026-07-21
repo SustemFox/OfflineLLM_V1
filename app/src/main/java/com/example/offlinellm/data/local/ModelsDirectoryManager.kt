@@ -1,0 +1,73 @@
+package com.example.offlinellm.data.local
+
+import android.content.Context
+import android.content.SharedPreferences
+import java.io.File
+
+/**
+ * Manages the directory where GGUF model files are stored.
+ * Default: app-private storage (no permissions needed).
+ * Option: user-selected shared folder via SAF.
+ */
+object ModelsDirectoryManager {
+
+    private const val PREFS_NAME = "offlinellm_prefs"
+    private const val KEY_CUSTOM_PATH = "models_custom_path"
+    private const val DEFAULT_DIR = "models"
+
+    private var prefs: SharedPreferences? = null
+
+    private fun prefs(context: Context): SharedPreferences {
+        if (prefs == null) {
+            prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        }
+        return prefs!!
+    }
+
+    /** Get the active models directory. Creates it if needed. */
+    fun getModelsDirectory(context: Context): File {
+        val customPath = prefs(context).getString(KEY_CUSTOM_PATH, null)
+        if (!customPath.isNullOrBlank()) {
+            val dir = File(customPath)
+            if (dir.exists() || dir.mkdirs()) return dir
+        }
+        // Fallback to app-private storage
+        return File(context.filesDir, DEFAULT_DIR).also { it.mkdirs() }
+    }
+
+    /** Set a custom shared folder path. Pass null to reset to default. */
+    fun setCustomPath(context: Context, path: String?) {
+        prefs(context).edit().putString(KEY_CUSTOM_PATH, path).apply()
+    }
+
+    /** Get current custom path (or null if using default). */
+    fun getCustomPath(context: Context): String? =
+        prefs(context).getString(KEY_CUSTOM_PATH, null)
+
+    /** Check if custom shared storage is configured. */
+    fun hasCustomPath(context: Context): Boolean =
+        !prefs(context).getString(KEY_CUSTOM_PATH, null).isNullOrBlank()
+
+    /** Get human-readable label for the current storage location. */
+    fun getStorageLabel(context: Context): String {
+        val customPath = getCustomPath(context)
+        return if (customPath != null) {
+            "📁 $customPath"
+        } else {
+            "📁 Внутренняя память (по умолчанию)"
+        }
+    }
+
+    /** Get app-external storage directory (SD card / shared storage). */
+    fun getExternalModelsDir(context: Context): File? {
+        val externalDir = context.getExternalFilesDir(null)
+        return if (externalDir != null) {
+            File(externalDir, DEFAULT_DIR).also { it.mkdirs() }
+        } else null
+    }
+
+    /** Reset to default (app-private) storage. */
+    fun resetToDefault(context: Context) {
+        setCustomPath(context, null)
+    }
+}
