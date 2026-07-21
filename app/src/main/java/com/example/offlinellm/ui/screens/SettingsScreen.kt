@@ -288,16 +288,36 @@ private fun ModelCard(
             )
             if (isDownloading) {
                 Spacer(modifier = Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    progress = downloadProgress,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                if (downloadProgress > 0f) {
+                    LinearProgressIndicator(
+                        progress = downloadProgress,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Скачивание: " + (downloadProgress * 100).toInt() + "%",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (downloadProgress <= 0f) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                    Text(
+                        text = if (downloadProgress > 0f)
+                            "Загрузка… " + (downloadProgress * 100).toInt() + "%"
+                        else
+                            "Подключение…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(8.dp))
             Row(
