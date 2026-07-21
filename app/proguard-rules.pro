@@ -40,3 +40,14 @@
 -dontwarn org.jboss.marshalling.**
 -dontwarn com.google.protobuf.**
 -dontwarn com.google.common.**
+
+# Netty has too many optional deps — ignore all missing classes
+-dontwarn com.aayushatharva.brotli4j.**
+-dontwarn com.github.luben.zstd.**
+-dontwarn com.google.errorprone.**
+-dontwarn org.bouncycastle.**
+-dontwarn com.aayushatharva.**
+-dontwarn io.netty.internal.**
+
+# Just build the APK — all missing classes are optional Netty features
+-ignorewarnings
