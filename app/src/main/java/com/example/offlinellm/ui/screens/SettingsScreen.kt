@@ -35,18 +35,21 @@ fun SettingsScreen(
     onSetStoragePath: (String?) -> Unit = {},
     onResetStoragePath: () -> Unit = {}
 ) {
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "Настройки",
-            style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
+        item {
+            Text(
+                text = "Настройки",
+                style = MaterialTheme.typography.headlineMedium
+            )
+        }
 
         // HTTP Server Section
+        item {
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -90,9 +93,10 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
+        }
+        
         // Backend Info Section
+        item {
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -117,9 +121,10 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
+        }
+        
         // Storage Section
+        item {
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -196,9 +201,10 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
+        }
+        
         // Log Section
+        item {
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -266,17 +272,18 @@ fun SettingsScreen(
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
+        
         // Models Section
-        Text(
-            text = "Модели",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
+        item {
+            Text(
+                text = "Модели",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
 
         if (state.isLoading) {
+            item {
             Box(
                 modifier = Modifier.fillMaxWidth().padding(32.dp),
                 contentAlignment = Alignment.Center
@@ -287,13 +294,10 @@ fun SettingsScreen(
                     Text("Загрузка моделей...")
                 }
             }
+            }
         } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(state.availableModels) { model ->
-                    ModelCard(
+            items(state.availableModels) { model ->
+                ModelCard(
                         model = model,
                         isActive = model.id == state.selectedModel?.id,
                         onSelect = { onSelectModel(model) },
@@ -305,14 +309,15 @@ fun SettingsScreen(
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Button(
-            onClick = onRefresh,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Обновить список")
+        
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = onRefresh,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Обновить список")
+            }
         }
     }
 }
