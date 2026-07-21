@@ -10,6 +10,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.offlinellm.domain.LlmModel
 import com.example.offlinellm.ui.chat.ChatViewModel
 import com.example.offlinellm.ui.screens.ChatScreen
 import com.example.offlinellm.ui.screens.SettingsScreen
@@ -26,7 +27,9 @@ class MainActivity : ComponentActivity() {
 fun AppRoot() {
     val navController = rememberNavController()
     val viewModel: ChatViewModel = viewModel(
-        factory = ChatViewModel.Factory(application = androidx.compose.ui.platform.LocalContext.current.applicationContext as android.app.Application)
+        factory = ChatViewModel.Factory(
+            application = androidx.compose.ui.platform.LocalContext.current.applicationContext as android.app.Application
+        )
     )
     val state by viewModel.uiState.collectAsState()
 
@@ -41,9 +44,12 @@ fun AppRoot() {
             }
             composable("settings") {
                 SettingsScreen(
-                    viewModel = viewModel,
                     state = state,
-                    onBack = { navController.popBackStack() }
+                    onToggleServer = { viewModel.toggleServer(it) },
+                    onDownloadModel = { viewModel.downloadModel(it) },
+                    onDeleteModel = { viewModel.deleteModel(it) },
+                    onSelectModel = { viewModel.selectModel(it) },
+                    onRefresh = { viewModel.refreshModels() }
                 )
             }
         }
