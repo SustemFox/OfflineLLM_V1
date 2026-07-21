@@ -185,9 +185,16 @@ class ChatViewModel(
                     )
                 }
                 .collect { progress ->
+                    val completed = progress >= 1f
                     _uiState.value = _uiState.value.copy(
-                        downloadState = if (progress >= 1f) DownloadState.Completed else DownloadState.InProgress(progress)
+                        downloadState = if (completed) DownloadState.Completed else DownloadState.InProgress(progress)
                     )
+                    if (completed) {
+                        addMessage(Message(
+                            text = "✅ Модель ${model.name} скачана! Выбери её и начни чат.",
+                            sender = Message.Sender.SYSTEM
+                        ))
+                    }
                 }
             loadModels()
         }
@@ -274,7 +281,14 @@ class ChatViewModel(
     )
 
     fun setCustomStoragePath(path: String?) {
-        ModelsDirectoryManager.setCustomPath(getApplication(), path)
+        if (path != null && path.startsWith("content://")) {
+            // SAF URI from folder picker → convert to filesystem path
+            val uri = android.net.Uri.parse(path)
+            ModelsDirectoryManager.setCustomPathFromSafUri(getApplication(), uri)
+        } else {
+            // Direct filesystem path (manual entry or reset)
+            ModelsDirectoryManager.setCustomPath(getApplication(), path)
+        }
         _uiState.value = _uiState.value.copy(
             storagePath = ModelsDirectoryManager.getStorageLabel(getApplication()),
             hasCustomStorage = ModelsDirectoryManager.hasCustomPath(getApplication())

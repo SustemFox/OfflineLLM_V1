@@ -70,4 +70,44 @@ object ModelsDirectoryManager {
     fun resetToDefault(context: Context) {
         setCustomPath(context, null)
     }
-}
+
+    /**
+     * Convert a SAF (Storage Access Framework) tree URI to a usable file path.
+     * Handles:
+     *   content://com.android.externalstorage.documents/tree/primary%3AOfflineLLM
+     *     → /storage/emulated/0/OfflineLLM
+     *   content://com.android.externalstorage.documents/tree/0123-4567%3AOfflineLLM
+     *     → /storage/0123-4567/OfflineLLM  (SD card)
+     */
+    fun safUriToPath(uri: android.net.Uri): String? {
+        // Parse SAF URI directly from the path
+        // Format: content://com.android.externalstorage.documents/tree/primary%3AOfflineLLM
+        // Or:     content://com.android.externalstorage.documents/tree/0123-4567%3AFolder
+        return try {
+            val path = uri.path ?: return null
+            val treePart = path.substringAfter("/tree/")
+                .replace("%3A", ":")
+                .replace("%2F", "/")
+            val parts = treePart.split(":")
+            when {
+                parts[0] == "primary" -> {
+                    val dir = parts.drop(1).joinToString("/")
+                    if (dir.isBlank()) "/storage/emulated/0"
+                    else "/storage/emulated/0/$dir"
+                }
+                else -> {
+                    val dir = parts.drop(1).joinToString("/")
+                    if (dir.isBlank()) "/storage/${parts[0]}"
+                    else "/storage/${parts[0]}/$dir"
+                }
+            }
+        } catch (_: Exception) { null }
+    }
+
+    /** Convenience: pass a SAF tree URI, convert to path and set it. */
+    fun setCustomPathFromSafUri(context: Context, uri: android.net.Uri): Boolean {
+        val path = safUriToPath(uri) ?: return false
+        setCustomPath(context, path)
+        return true
+    }
+

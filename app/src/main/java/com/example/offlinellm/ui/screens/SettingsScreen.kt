@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -216,7 +218,9 @@ fun SettingsScreen(
                         isActive = model.id == state.selectedModel?.id,
                         onSelect = { onSelectModel(model) },
                         onDownload = { onDownloadModel(model) },
-                        onDelete = { onDeleteModel(model) }
+                        onDelete = { onDeleteModel(model) },
+                        downloadState = state.downloadState,
+                        selectedModel = state.selectedModel
                     )
                 }
             }
@@ -240,8 +244,12 @@ private fun ModelCard(
     isActive: Boolean,
     onSelect: () -> Unit,
     onDownload: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    downloadState: DownloadState = DownloadState.Idle,
+    selectedModel: LlmModel? = null
 ) {
+    val isDownloading = downloadState is DownloadState.InProgress && model.id == selectedModel?.id
+    val downloadProgress = (downloadState as? DownloadState.InProgress)?.progress ?: 0f
     Card(
         onClick = onSelect,
         modifier = Modifier.fillMaxWidth(),
@@ -277,6 +285,19 @@ private fun ModelCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (isDownloading) {
+                Spacer(modifier = Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { downloadProgress },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Скачивание: " + (downloadProgress * 100).toInt() + "%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
             Spacer(modifier = Modifier.height(8.dp))
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -299,9 +320,14 @@ private fun ModelCard(
                 } else {
                     Button(
                         onClick = onDownload,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        enabled = !isDownloading
                     ) {
-                        Text("Скачать")
+                        if (isDownloading) {
+                            Text("Загрузка…")
+                        } else {
+                            Text("Скачать")
+                        }
                     }
                 }
             }
