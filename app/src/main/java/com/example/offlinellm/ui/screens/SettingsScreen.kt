@@ -231,13 +231,11 @@ fun SettingsScreen(
                         )
                     }
                 }
+                val localCtx = LocalContext.current
                 if (expanded) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Button(
-                        onClick = {
-                            val ctx = androidx.compose.ui.platform.LocalContext.current
-                            AppLogger.copyToClipboard(ctx)
-                        },
+                        onClick = { AppLogger.copyToClipboard(localCtx) },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("📋 Копировать логи")

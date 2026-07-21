@@ -27,12 +27,16 @@ object ModelLoader {
             AppLogger.d("ModelLoader", "Directory does not exist: ${modelsDir.absolutePath}")
             return emptyList()
         }
-        return modelsDir.listFiles()
+        val files = modelsDir.listFiles()
             ?.filter { it.isFile && it.extension == "gguf" }
             ?.map { file -> parseModelFile(file) }
             ?.sortedByDescending { it.fileSizeBytes }
-            ?.also { files -> AppLogger.d("ModelLoader", "Found ${files.size} models in ${modelsDir.absolutePath}") }
-            ?: emptyList().also { AppLogger.d("ModelLoader", "No .gguf files found in ${modelsDir.absolutePath}") }
+        if (files != null) {
+            AppLogger.d("ModelLoader", "Found ${files.size} models")
+            return files
+        }
+        AppLogger.d("ModelLoader", "No .gguf files found in ${modelsDir.absolutePath}")
+        return emptyList()
     }
 
     fun getRecommendedModels(): List<GgufModelInfo> = listOf(
