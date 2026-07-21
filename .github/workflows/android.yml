@@ -42,32 +42,27 @@ jobs:
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
 
+      - name: Generate debug keystore
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkey -v -keystore ~/.android/debug.keystore               -alias androiddebugkey -keyalg RSA -keysize 2048               -validity 10000 -storepass android -keypass android               -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build APK
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.build_type }}" = "release" ]; then
-            ./gradlew :app:assembleRelease
-          else
-            ./gradlew :app:assembleDebug
-          fi
+      - name: Build Release APK
+        run: ./gradlew :app:assembleRelease
 
       - name: Check APK size
-        run: |
-          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
-            ls -lh app/build/outputs/apk/debug/app-debug.apk
-          elif [ -f app/build/outputs/apk/release/app-release.apk ]; then
-            ls -lh app/build/outputs/apk/release/app-release.apk
-          fi
+        run: ls -lh app/build/outputs/apk/release/app-release.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: OfflineLLM-${{ github.sha }}-${{ github.event_name == 'workflow_dispatch' && inputs.build_type || 'debug' }}
-          path: |
-            app/build/outputs/apk/debug/app-debug.apk
-            app/build/outputs/apk/release/app-release.apk
+          name: OfflineLLM-v1.0
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: warn
 
       - name: Show build info
