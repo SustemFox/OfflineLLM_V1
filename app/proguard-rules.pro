@@ -30,3 +30,13 @@
 # Keep all Netty classes used by Ktor
 -keep class io.netty.** { *; }
 -keep class org.slf4j.** { *; }
+
+# Additional Netty optional deps (compression, marshalling, etc.)
+-dontwarn com.jcraft.jzlib.**
+-dontwarn com.ning.compress.**
+-dontwarn com.oracle.svm.core.annotate.**
+-dontwarn lzma.sdk.**
+-dontwarn net.jpountz.**
+-dontwarn org.jboss.marshalling.**
+-dontwarn com.google.protobuf.**
+-dontwarn com.google.common.**
