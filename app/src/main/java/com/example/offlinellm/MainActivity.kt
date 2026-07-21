@@ -10,7 +10,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.example.offlinellm.domain.LlmModel
+import com.example.offlinellm.domain.model.LlmModel
 import com.example.offlinellm.ui.chat.ChatViewModel
 import com.example.offlinellm.ui.screens.ChatScreen
 import com.example.offlinellm.ui.screens.SettingsScreen

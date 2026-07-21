@@ -8,13 +8,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.example.offlinellm.domain.LlmModel
-import com.example.offlinellm.ui.viewmodel.SettingsUiState
+import com.example.offlinellm.domain.model.LlmModel
+import com.example.offlinellm.ui.chat.ChatViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    state: SettingsUiState,
+    state: ChatViewModel.ChatUiState,
     onToggleServer: (Boolean) -> Unit,
     onDownloadModel: (LlmModel) -> Unit,
     onDeleteModel: (LlmModel) -> Unit,
@@ -62,7 +62,7 @@ fun SettingsScreen(
                         )
                         if (state.isServerRunning) {
                             Text(
-                                text = "Порт: ${state.serverPort}",
+                                text = "Порт: ${state.serverPort ?: 8080}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -92,11 +92,11 @@ fun SettingsScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Ускоритель: ${state.backendInfo}",
+                    text = "Ускоритель: ${state.activeBackend}",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
-                    text = "Модель: ${state.activeModelId.ifEmpty { "не выбрана" }}",
+                    text = "Модель: ${state.selectedModel?.name ?: "не выбрана"}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -128,10 +128,10 @@ fun SettingsScreen(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(state.models) { model ->
+                items(state.availableModels) { model ->
                     ModelCard(
                         model = model,
-                        isActive = model.id == state.activeModelId,
+                        isActive = model.id == state.selectedModel?.id,
                         onSelect = { onSelectModel(model) },
                         onDownload = { onDownloadModel(model) },
                         onDelete = { onDeleteModel(model) }
@@ -190,7 +190,7 @@ private fun ModelCard(
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "${model.size} | ${model.quantization}",
+                text = "${model.sizeFormatted}MB | ${model.quantType}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
