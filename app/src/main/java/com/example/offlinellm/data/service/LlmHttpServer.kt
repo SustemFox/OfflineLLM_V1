@@ -98,7 +98,7 @@ class LlmHttpServer(
                     val prompt = req.messages.joinToString("\n") { "${it.role}: ${it.content}" }
                     val result = buildString {
                         val flow = generate(prompt)
-                        kotlinx.coroutines.flow.collect(flow) { append(it) }
+                        flow.collect { append(it) }
                     }
                     val response = ChatCompletionResponse(
                         model = req.model.ifEmpty { modelId() },
