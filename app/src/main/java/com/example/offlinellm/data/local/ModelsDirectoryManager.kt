@@ -2,6 +2,7 @@ package com.example.offlinellm.data.local
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.offlinellm.data.local.AppLogger
 import java.io.File
 
 /**
@@ -29,14 +30,20 @@ object ModelsDirectoryManager {
         val customPath = prefs(context).getString(KEY_CUSTOM_PATH, null)
         if (!customPath.isNullOrBlank()) {
             val dir = File(customPath)
-            if (dir.exists() || dir.mkdirs()) return dir
+            if (dir.exists() || dir.mkdirs()) {
+                AppLogger.d("Storage", "Using custom path: ${dir.absolutePath}")
+                return dir
+            }
+            AppLogger.d("Storage", "Custom path ${dir.absolutePath} does not exist and cannot be created")
         }
-        // Fallback to app-private storage
-        return File(context.filesDir, DEFAULT_DIR).also { it.mkdirs() }
+        val default = File(context.filesDir, DEFAULT_DIR).also { it.mkdirs() }
+        AppLogger.d("Storage", "Using default path: ${default.absolutePath}")
+        return default
     }
 
     /** Set a custom shared folder path. Pass null to reset to default. */
     fun setCustomPath(context: Context, path: String?) {
+        AppLogger.d("Storage", "Setting custom path: ${path ?: "null (reset to default)"}")
         prefs(context).edit().putString(KEY_CUSTOM_PATH, path).apply()
     }
 

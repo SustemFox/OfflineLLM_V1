@@ -1,6 +1,7 @@
 package com.example.offlinellm.llama
 
 import android.content.Context
+import com.example.offlinellm.data.local.AppLogger
 import com.example.offlinellm.data.local.ModelsDirectoryManager
 import java.io.File
 
@@ -21,12 +22,17 @@ object ModelLoader {
 
     fun scanLocalModels(context: Context): List<GgufModelInfo> {
         val modelsDir = getModelsDirectory(context)
-        if (!modelsDir.exists()) return emptyList()
+        AppLogger.d("ModelLoader", "Scanning: ${modelsDir.absolutePath}")
+        if (!modelsDir.exists()) {
+            AppLogger.d("ModelLoader", "Directory does not exist: ${modelsDir.absolutePath}")
+            return emptyList()
+        }
         return modelsDir.listFiles()
             ?.filter { it.isFile && it.extension == "gguf" }
             ?.map { file -> parseModelFile(file) }
             ?.sortedByDescending { it.fileSizeBytes }
-            ?: emptyList()
+            ?.also { files -> AppLogger.d("ModelLoader", "Found ${files.size} models in ${modelsDir.absolutePath}") }
+            ?: emptyList().also { AppLogger.d("ModelLoader", "No .gguf files found in ${modelsDir.absolutePath}") }
     }
 
     fun getRecommendedModels(): List<GgufModelInfo> = listOf(

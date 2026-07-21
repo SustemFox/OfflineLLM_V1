@@ -5,6 +5,7 @@ import com.example.offlinellm.domain.model.DownloadState
 import com.example.offlinellm.domain.model.LlmModel
 import com.example.offlinellm.domain.repository.ModelRepository
 import com.example.offlinellm.llama.LlamaBridge
+import com.example.offlinellm.data.local.AppLogger
 import com.example.offlinellm.llama.ModelLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -81,21 +82,28 @@ class ModelRepositoryImpl(
         val destFile = File(modelsDir, "$modelId.gguf")
         val tempFile = File(modelsDir, "$modelId.tmp")
 
+        AppLogger.d("Download", "Starting download: $modelId")
+        AppLogger.d("Download", "URL: $downloadUrl")
+        AppLogger.d("Download", "Destination: ${modelsDir.absolutePath}/$modelId.gguf")
         try {
             val url = URL(downloadUrl)
+            AppLogger.d("Download", "Opening connection...")
             val conn = url.openConnection() as HttpURLConnection
             conn.instanceFollowRedirects = true
             conn.connectTimeout = 30000
             conn.readTimeout = 60000
             conn.connect()
+            AppLogger.d("Download", "Connected, response: ${conn.responseCode}")
 
             val totalBytes = conn.contentLengthLong
+            AppLogger.d("Download", "Total bytes: $totalBytes (${totalBytes / 1024 / 1024} MB)")
             val input = conn.inputStream
             val output = tempFile.outputStream()
             val buffer = ByteArray(65536)
             var read: Int
             var totalRead = 0L
 
+            var lastLoggedPct = -1
             while (input.read(buffer).also { read = it } > 0) {
                 output.write(buffer, 0, read)
                 totalRead += read
@@ -103,16 +111,23 @@ class ModelRepositoryImpl(
                     (totalRead.toFloat() / totalBytes).coerceAtMost(1f)
                 else 0f
                 emit(progress)
+                val pct = (progress * 100).toInt()
+                if (pct % 10 == 0 && pct != lastLoggedPct) {
+                    AppLogger.d("Download", "$modelId: $pct% ($totalRead / $totalBytes)")
+                    lastLoggedPct = pct
+                }
             }
             input.close()
             output.close()
 
+            AppLogger.d("Download", "$modelId download complete! $totalRead bytes written")
             tempFile.renameTo(destFile)
             downloadedModelIds.add(modelId)
             refreshModels()
             emit(1f)
 
         } catch (e: Exception) {
+            AppLogger.e("Download", "$modelId FAILED: ${e.message}", e)
             tempFile.delete()
             throw e
         }

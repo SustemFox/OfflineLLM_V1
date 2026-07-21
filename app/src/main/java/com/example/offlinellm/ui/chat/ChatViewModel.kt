@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.offlinellm.data.service.LlmHttpServer
 import com.example.offlinellm.di.AppProvider
 import com.example.offlinellm.domain.model.DownloadState
+import com.example.offlinellm.data.local.AppLogger
 import com.example.offlinellm.data.local.ModelsDirectoryManager
 import com.example.offlinellm.domain.model.LlmModel
 import com.example.offlinellm.domain.model.Message
@@ -176,10 +177,15 @@ class ChatViewModel(
 
     fun downloadSelectedModel() {
         val model = _uiState.value.selectedModel ?: return
+        AppLogger.d("ChatVM", "downloadSelectedModel: ${model.id} from ${model.downloadUrl}")
         viewModelScope.launch {
             AppProvider.modelRepository.downloadModel(model.id, model.downloadUrl)
-                .onStart { _uiState.value = _uiState.value.copy(downloadState = DownloadState.InProgress(0f)) }
+                .onStart {
+                    AppLogger.d("ChatVM", "Download starting for ${model.id}")
+                    _uiState.value = _uiState.value.copy(downloadState = DownloadState.InProgress(0f))
+                }
                 .catch { error ->
+                    AppLogger.e("ChatVM", "Download FAILED: ${model.id} - ${error.message}", error)
                     _uiState.value = _uiState.value.copy(
                         downloadState = DownloadState.Failed(error.localizedMessage ?: "Download failed")
                     )
@@ -190,6 +196,7 @@ class ChatViewModel(
                         downloadState = if (completed) DownloadState.Completed else DownloadState.InProgress(progress)
                     )
                     if (completed) {
+                        AppLogger.d("ChatVM", "Download COMPLETED: ${model.id}")
                         addMessage(Message(
                             text = "✅ Модель ${model.name} скачана! Выбери её и начни чат.",
                             sender = Message.Sender.SYSTEM

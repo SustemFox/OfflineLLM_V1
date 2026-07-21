@@ -8,8 +8,16 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import com.example.offlinellm.data.local.AppLogger
 import com.example.offlinellm.data.local.ModelsDirectoryManager
 import com.example.offlinellm.domain.model.DownloadState
 import com.example.offlinellm.domain.model.LlmModel
@@ -184,6 +192,79 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Log Section
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            var expanded by remember { mutableStateOf(false) }
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "📋 Логи",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (expanded) {
+                            IconButton(onClick = { AppLogger.clear() }) {
+                                Icon(Icons.Default.Delete, "Очистить", modifier = Modifier.size(20.dp))
+                            }
+                            IconButton(onClick = { onRefresh() }) {
+                                Icon(Icons.Default.Refresh, "Обновить", modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        Switch(
+                            checked = expanded,
+                            onCheckedChange = { expanded = it }
+                        )
+                    }
+                }
+                if (expanded) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            val ctx = androidx.compose.ui.platform.LocalContext.current
+                            AppLogger.copyToClipboard(ctx)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("📋 Копировать логи")
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val logText = remember { mutableStateOf("") }
+                    LaunchedEffect(expanded) {
+                        logText.value = AppLogger.getLogText()
+                    }
+                    LaunchedEffect(Unit) {
+                        // Refresh logs every 2 seconds while expanded
+                        while (true) {
+                            kotlinx.coroutines.delay(2000)
+                            if (expanded) logText.value = AppLogger.getLogText()
+                        }
+                    }
+                    SelectionContainer {
+                        Text(
+                            text = logText.value.ifEmpty { "Логов пока нет" },
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 300.dp)
+                                .verticalScroll(rememberScrollState())
+                                .padding(8.dp)
+                        )
+                    }
                 }
             }
         }
