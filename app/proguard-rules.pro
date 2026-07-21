@@ -15,3 +15,18 @@
 # Keep coroutines
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+
+# Netty optional dependencies (not available on Android)
+-dontwarn io.netty.internal.tcnative.**
+-dontwarn io.netty.handler.ssl.**
+-dontwarn org.conscrypt.**
+-dontwarn org.eclipse.jetty.npn.**
+-dontwarn reactor.blockhound.**
+-dontwarn org.apache.log4j.**
+-dontwarn org.apache.logging.log4j.**
+-dontwarn org.slf4j.impl.**
+-dontwarn java.lang.management.**
+
+# Keep all Netty classes used by Ktor
+-keep class io.netty.** { *; }
+-keep class org.slf4j.** { *; }
