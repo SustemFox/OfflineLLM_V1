@@ -49,6 +49,7 @@ class ModelRepositoryImpl(
                 id = info.id,
                 name = info.name,
                 sizeBytes = info.fileSizeBytes,
+                downloadUrl = info.downloadUrl,
                 isDownloaded = downloadedModelIds.contains(info.id) || info.filePath.isNotEmpty()
             )
         }
