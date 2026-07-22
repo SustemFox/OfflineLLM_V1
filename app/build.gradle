@@ -1,3 +1,4 @@
+// ci-trigger: hf-search-20260722b
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
