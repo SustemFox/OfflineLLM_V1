@@ -14,15 +14,21 @@
 #define LOG_TAG "OfflineLLM_JNI"
 #define ALOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#define ALOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 
 #ifndef OFFLINELLM_LLAMA_TAG
 #define OFFLINELLM_LLAMA_TAG "unknown"
+#endif
+
+#ifndef OFFLINELLM_OPENCL_BUILT
+#define OFFLINELLM_OPENCL_BUILT 0
 #endif
 
 struct ContextHandle {
     llama_model * model = nullptr;
     llama_context * ctx = nullptr;
     const llama_vocab * vocab = nullptr;
+    int n_gpu_layers = 0;
     std::mutex mu;
 };
 
@@ -40,27 +46,39 @@ static jstring to_jstring(JNIEnv * env, const std::string & s) {
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_example_offlinellm_llama_LlamaBridge_getBackendInfo(JNIEnv * env, jclass) {
+#if OFFLINELLM_OPENCL_BUILT
+    std::string s = std::string("CPU+OpenCL (llama.cpp ") + OFFLINELLM_LLAMA_TAG + ")";
+#else
     std::string s = std::string("CPU (llama.cpp ") + OFFLINELLM_LLAMA_TAG + " NEON)";
+#endif
     return env->NewStringUTF(s.c_str());
 }
 
-extern "C" JNIEXPORT jlong JNICALL
-Java_com_example_offlinellm_llama_LlamaBridge_createContext(
-        JNIEnv * env, jclass,
-        jstring jpath, jint n_ctx, jint /*n_gpu_layers*/, jint n_threads) {
-    const std::string path = jstring_to_string(env, jpath);
-    ALOGI("createContext path=%s n_ctx=%d threads=%d tag=%s",
-          path.c_str(), (int)n_ctx, (int)n_threads, OFFLINELLM_LLAMA_TAG);
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_example_offlinellm_llama_LlamaBridge_isOpenClBuilt(JNIEnv *, jclass) {
+#if OFFLINELLM_OPENCL_BUILT
+    return JNI_TRUE;
+#else
+    return JNI_FALSE;
+#endif
+}
 
-    llama_backend_init();
-
+static ContextHandle * try_create(const std::string & path, int n_ctx, int n_gpu_layers, int n_threads) {
     llama_model_params mparams = llama_model_default_params();
+#if OFFLINELLM_OPENCL_BUILT
+    mparams.n_gpu_layers = n_gpu_layers;
+#else
+    (void)n_gpu_layers;
     mparams.n_gpu_layers = 0;
+#endif
+
+    ALOGI("load model path=%s n_gpu_layers=%d opencl_built=%d",
+          path.c_str(), (int)mparams.n_gpu_layers, OFFLINELLM_OPENCL_BUILT);
 
     llama_model * model = llama_model_load_from_file(path.c_str(), mparams);
     if (!model) {
-        ALOGE("model load failed: %s", path.c_str());
-        return 0;
+        ALOGE("model load failed: %s (ngl=%d)", path.c_str(), (int)mparams.n_gpu_layers);
+        return nullptr;
     }
 
     llama_context_params cparams = llama_context_default_params();
@@ -72,7 +90,7 @@ Java_com_example_offlinellm_llama_LlamaBridge_createContext(
     if (!ctx) {
         ALOGE("context create failed");
         llama_model_free(model);
-        return 0;
+        return nullptr;
     }
 
     const llama_vocab * vocab = llama_model_get_vocab(model);
@@ -80,14 +98,44 @@ Java_com_example_offlinellm_llama_LlamaBridge_createContext(
         ALOGE("null vocab");
         llama_free(ctx);
         llama_model_free(model);
-        return 0;
+        return nullptr;
     }
 
     auto * handle = new ContextHandle();
     handle->model = model;
     handle->ctx = ctx;
     handle->vocab = vocab;
-    ALOGI("context ready tag=%s", OFFLINELLM_LLAMA_TAG);
+    handle->n_gpu_layers = (int)mparams.n_gpu_layers;
+    ALOGI("context ready tag=%s ngl=%d", OFFLINELLM_LLAMA_TAG, handle->n_gpu_layers);
+    return handle;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_example_offlinellm_llama_LlamaBridge_createContext(
+        JNIEnv * env, jclass,
+        jstring jpath, jint n_ctx, jint n_gpu_layers, jint n_threads) {
+    const std::string path = jstring_to_string(env, jpath);
+    ALOGI("createContext path=%s n_ctx=%d ngl=%d threads=%d tag=%s opencl=%d",
+          path.c_str(), (int)n_ctx, (int)n_gpu_layers, (int)n_threads,
+          OFFLINELLM_LLAMA_TAG, OFFLINELLM_OPENCL_BUILT);
+
+    llama_backend_init();
+
+    int want_ngl = (int)n_gpu_layers;
+#if !OFFLINELLM_OPENCL_BUILT
+    want_ngl = 0;
+#endif
+
+    ContextHandle * handle = try_create(path, (int)n_ctx, want_ngl, (int)n_threads);
+#if OFFLINELLM_OPENCL_BUILT
+    if (!handle && want_ngl != 0) {
+        ALOGW("OpenCL/ngl load failed — falling back to CPU n_gpu_layers=0");
+        handle = try_create(path, (int)n_ctx, 0, (int)n_threads);
+    }
+#endif
+    if (!handle) {
+        return 0;
+    }
     return reinterpret_cast<jlong>(handle);
 }
 
@@ -118,7 +166,6 @@ static std::string build_prompt(const std::string & system, const std::string & 
 static void clear_memory(llama_context * ctx) {
     llama_memory_t mem = llama_get_memory(ctx);
     if (mem) {
-        // data=true clears KV data + metadata (replacement for llama_kv_self_clear)
         llama_memory_clear(mem, true);
     }
 }
@@ -191,21 +238,18 @@ static llama_sampler * make_sampler(
     llama_sampler * chain = llama_sampler_chain_init(sparams);
     if (!chain) return nullptr;
 
-    // penalties: last_n=-1 (ctx), repeat, freq, present=0
     const float rep = repeat_penalty > 0.f ? repeat_penalty : 1.0f;
     const float freq = frequency_penalty >= 0.f ? frequency_penalty : 0.f;
     llama_sampler_chain_add(chain, llama_sampler_init_penalties(-1, rep, freq, 0.0f));
 
-    // top-k then top-p then temp then dist
     llama_sampler_chain_add(chain, llama_sampler_init_top_k(40));
     const float tp = (top_p > 0.f && top_p <= 1.f) ? top_p : 0.9f;
     llama_sampler_chain_add(chain, llama_sampler_init_top_p(tp, 1));
 
-    const float temp = temperature > 0.01f ? temperature : 0.01f;
     if (temperature <= 0.01f) {
         llama_sampler_chain_add(chain, llama_sampler_init_greedy());
     } else {
-        llama_sampler_chain_add(chain, llama_sampler_init_temp(temp));
+        llama_sampler_chain_add(chain, llama_sampler_init_temp(temperature));
         llama_sampler_chain_add(chain, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
     }
     return chain;
@@ -264,7 +308,6 @@ static std::string generate_loop(
         return "ERROR: prompt too long for n_ctx";
     }
 
-    // Evaluate prompt (batch_get_one is still 2-arg on b10079)
     for (int i = 0; i < n_tok; ++i) {
         llama_batch batch = llama_batch_get_one(&tokens[(size_t)i], 1);
         if (llama_decode(handle->ctx, batch) != 0) {
@@ -380,6 +423,17 @@ Java_com_example_offlinellm_llama_LlamaBridge_runInferenceStream(
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_example_offlinellm_llama_LlamaBridge_benchmark(
         JNIEnv * env, jclass, jlong, jint, jint) {
+#if OFFLINELLM_OPENCL_BUILT
+    std::string s = std::string("benchmark: n/a (CPU+OpenCL JNI ") + OFFLINELLM_LLAMA_TAG + ")";
+#else
     std::string s = std::string("benchmark: n/a (CPU JNI ") + OFFLINELLM_LLAMA_TAG + ")";
+#endif
     return env->NewStringUTF(s.c_str());
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_example_offlinellm_llama_LlamaBridge_getLoadedGpuLayers(JNIEnv *, jclass, jlong ptr) {
+    if (!ptr) return 0;
+    auto * handle = reinterpret_cast<ContextHandle *>(ptr);
+    return handle->n_gpu_layers;
 }
