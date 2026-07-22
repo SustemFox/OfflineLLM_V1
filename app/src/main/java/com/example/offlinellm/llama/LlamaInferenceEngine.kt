@@ -13,11 +13,11 @@ class LlamaInferenceEngine(
     private var nCtx: Int = 2048,
     private var nGpuLayers: Int = 0,
     private var threads: Int = Runtime.getRuntime().availableProcessors().coerceIn(2, 6),
-    private var maxTokens: Int = 256,
-    private var temperature: Float = 0.7f,
-    private var topP: Float = 0.9f,
-    private var repeatPenalty: Float = 1.15f,
-    private var frequencyPenalty: Float = 0.15f
+    private var maxTokens: Int = 128,
+    private var temperature: Float = 0.65f,
+    private var topP: Float = 0.85f,
+    private var repeatPenalty: Float = 1.25f,
+    private var frequencyPenalty: Float = 0.30f
 ) {
     private var contextPtr: Long = 0L
 
@@ -90,7 +90,7 @@ class LlamaInferenceEngine(
                     return@callbackFlow
                 }
             }
-            val acc = StringBuilder()
+            // JNI now pushes the full cleaned assistant text each time (not token deltas)
             LlamaBridge.runInferenceStream(
                 contextPtr,
                 prompt,
@@ -100,10 +100,9 @@ class LlamaInferenceEngine(
                 topP,
                 repeatPenalty,
                 frequencyPenalty,
-                LlamaBridge.TokenCallback { token ->
+                LlamaBridge.TokenCallback { text ->
                     if (!isActive) return@TokenCallback
-                    acc.append(token)
-                    trySend(acc.toString())
+                    trySend(text)
                 }
             )
             close()
