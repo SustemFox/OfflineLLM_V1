@@ -156,11 +156,24 @@ Java_com_example_offlinellm_llama_LlamaBridge_releaseContext(JNIEnv *, jclass, j
     delete handle;
 }
 
+/** Qwen2 / ChatML-style prompt — plain User/Assistant loops badly on 0.5B. */
 static std::string build_prompt(const std::string & system, const std::string & user) {
-    if (!system.empty()) {
-        return system + "\n\nUser: " + user + "\nAssistant:";
+    std::string sys = system;
+    if (sys.empty()) {
+        sys = "You are a helpful offline assistant on a phone. Answer briefly in the user's language. "
+              "Do not repeat the same paragraph. Do not use XML tags.";
     }
-    return "User: " + user + "\nAssistant:";
+    // ChatML (Qwen2 / many instruct GGUFs)
+    std::string p;
+    p.reserve(sys.size() + user.size() + 128);
+    p += "<|im_start|>system\n";
+    p += sys;
+    p += "<|im_end|>\n";
+    p += "<|im_start|>user\n";
+    p += user;
+    p += "<|im_end|>\n";
+    p += "<|im_start|>assistant\n";
+    return p;
 }
 
 static void clear_memory(llama_context * ctx) {
@@ -186,21 +199,87 @@ static std::string token_to_piece_str(const llama_vocab * vocab, llama_token tok
     return std::string(buf, buf + n);
 }
 
+static std::string trim_copy(const std::string & s) {
+    size_t a = 0;
+    while (a < s.size() && (s[a] == ' ' || s[a] == '\n' || s[a] == '\r' || s[a] == '\t')) a++;
+    size_t b = s.size();
+    while (b > a && (s[b - 1] == ' ' || s[b - 1] == '\n' || s[b - 1] == '\r' || s[b - 1] == '\t')) b--;
+    return s.substr(a, b - a);
+}
+
+/** Collapse consecutive duplicate paragraphs / long repeated chunks. */
+static std::string collapse_repeats(const std::string & in) {
+    if (in.size() < 40) return in;
+
+    // Split on blank lines into paragraphs
+    std::vector<std::string> paras;
+    size_t i = 0;
+    while (i < in.size()) {
+        while (i < in.size() && (in[i] == '\n' || in[i] == '\r')) i++;
+        if (i >= in.size()) break;
+        size_t j = i;
+        while (j < in.size()) {
+            if (in[j] == '\n' && j + 1 < in.size() && in[j + 1] == '\n') break;
+            if (in[j] == '\n' && j + 1 < in.size() && in[j + 1] == '\r' && j + 2 < in.size() && in[j + 2] == '\n') break;
+            j++;
+        }
+        std::string p = trim_copy(in.substr(i, j - i));
+        if (!p.empty()) paras.push_back(p);
+        i = j;
+        while (i < in.size() && (in[i] == '\n' || in[i] == '\r')) i++;
+    }
+    if (paras.empty()) return in;
+
+    std::vector<std::string> outp;
+    for (const auto & p : paras) {
+        if (!outp.empty() && outp.back() == p) {
+            continue; // skip consecutive dup paragraph
+        }
+        // also skip if same as any of last 2 (A B A B pattern → drop second A/B cycle start)
+        if (outp.size() >= 2 && outp[outp.size() - 2] == p) {
+            continue;
+        }
+        outp.push_back(p);
+    }
+
+    // If still many paras but only 2 unique alternating — keep first two unique once
+    if (outp.size() > 4) {
+        // detect full-output cycle: first half == second half roughly
+        std::string joined;
+        for (size_t k = 0; k < outp.size(); ++k) {
+            if (k) joined += "\n\n";
+            joined += outp[k];
+        }
+        // fallback token: if more than 3 paras and para0==para2 and para1==para3
+        if (outp.size() >= 4 && outp[0] == outp[2] && outp[1] == outp[3]) {
+            return outp[0] + "\n\n" + outp[1];
+        }
+        return joined;
+    }
+
+    std::string joined;
+    for (size_t k = 0; k < outp.size(); ++k) {
+        if (k) joined += "\n\n";
+        joined += outp[k];
+    }
+    return joined.empty() ? in : joined;
+}
+
 static bool is_degenerate(const std::vector<llama_token> & gen) {
-    if (gen.size() < 8) return false;
+    if (gen.size() < 6) return false;
     {
         llama_token last = gen.back();
         int c = 0;
-        for (int i = (int)gen.size() - 1; i >= 0 && c < 20; --i) {
+        for (int i = (int)gen.size() - 1; i >= 0 && c < 16; --i) {
             if (gen[(size_t)i] == last) c++;
             else break;
         }
-        if (c >= 12) return true;
+        if (c >= 8) return true;
     }
-    for (int cycle = 1; cycle <= 12; ++cycle) {
-        if ((int)gen.size() < cycle * 4) continue;
+    for (int cycle = 1; cycle <= 24; ++cycle) {
+        if ((int)gen.size() < cycle * 3) continue;
         bool ok = true;
-        for (int r = 0; r < 4 && ok; ++r) {
+        for (int r = 0; r < 3 && ok; ++r) {
             for (int j = 0; j < cycle; ++j) {
                 size_t a = gen.size() - 1 - (size_t)j - (size_t)r * (size_t)cycle;
                 size_t b = gen.size() - 1 - (size_t)j;
@@ -212,19 +291,54 @@ static bool is_degenerate(const std::vector<llama_token> & gen) {
     return false;
 }
 
-static bool text_has_phrase_loop(const std::string & out) {
-    if (out.size() < 80) return false;
-    const size_t n = out.size();
-    const size_t win = std::min<size_t>(60, n / 3);
-    if (win < 20) return false;
-    std::string tail = out.substr(n - win);
-    std::string region = out.substr(n > 300 ? n - 300 : 0);
+/** True if the newest paragraph already appeared earlier (screenshot-style loop). */
+static bool text_has_paragraph_loop(const std::string & out) {
+    if (out.size() < 50) return false;
+    // last paragraph
+    size_t end = out.size();
+    while (end > 0 && (out[end - 1] == '\n' || out[end - 1] == ' ')) end--;
+    if (end < 20) return false;
+    size_t start = end;
+    // walk back to previous blank line
+    while (start > 0) {
+        if (out[start - 1] == '\n' && start >= 2 && out[start - 2] == '\n') break;
+        start--;
+    }
+    while (start < end && (out[start] == '\n' || out[start] == ' ')) start++;
+    if (end <= start) return false;
+    std::string last = out.substr(start, end - start);
+    if (last.size() < 24) {
+        // short last line — use longer tail window
+        size_t win = std::min<size_t>(80, out.size() / 2);
+        if (win < 30) return false;
+        last = out.substr(out.size() - win);
+        start = out.size() - win;
+    }
+    // count occurrences in prefix
+    std::string prefix = out.substr(0, start);
+    if (prefix.size() < last.size()) return false;
     size_t pos = 0;
     int hits = 0;
-    while ((pos = region.find(tail, pos)) != std::string::npos) {
+    while ((pos = prefix.find(last, pos)) != std::string::npos) {
         hits++;
-        pos += win / 2;
-        if (hits >= 3) return true;
+        pos += std::max<size_t>(1, last.size() / 2);
+        if (hits >= 1) {
+            // even one prior full paragraph match = loop starting
+            return true;
+        }
+    }
+    // also: long tail repeated (non-paragraph)
+    if (out.size() >= 120) {
+        size_t win = std::min<size_t>(100, out.size() / 3);
+        std::string tail = out.substr(out.size() - win);
+        std::string region = out.substr(0, out.size() - win);
+        pos = 0;
+        hits = 0;
+        while ((pos = region.find(tail, pos)) != std::string::npos) {
+            hits++;
+            pos += win / 2;
+            if (hits >= 1) return true;
+        }
     }
     return false;
 }
@@ -238,21 +352,48 @@ static llama_sampler * make_sampler(
     llama_sampler * chain = llama_sampler_chain_init(sparams);
     if (!chain) return nullptr;
 
-    const float rep = repeat_penalty > 0.f ? repeat_penalty : 1.0f;
-    const float freq = frequency_penalty >= 0.f ? frequency_penalty : 0.f;
-    llama_sampler_chain_add(chain, llama_sampler_init_penalties(-1, rep, freq, 0.0f));
+    // Stronger anti-repeat for tiny models (0.5B)
+    const float rep = repeat_penalty >= 1.0f ? repeat_penalty : 1.2f;
+    const float freq = frequency_penalty >= 0.f ? frequency_penalty : 0.25f;
+    const float present = 0.15f;
+    // penalty_last_n: 256 tokens of history
+    llama_sampler_chain_add(chain, llama_sampler_init_penalties(256, rep, freq, present));
 
-    llama_sampler_chain_add(chain, llama_sampler_init_top_k(40));
-    const float tp = (top_p > 0.f && top_p <= 1.f) ? top_p : 0.9f;
+    llama_sampler_chain_add(chain, llama_sampler_init_top_k(30));
+    const float tp = (top_p > 0.f && top_p <= 1.f) ? top_p : 0.85f;
     llama_sampler_chain_add(chain, llama_sampler_init_top_p(tp, 1));
 
     if (temperature <= 0.01f) {
         llama_sampler_chain_add(chain, llama_sampler_init_greedy());
     } else {
-        llama_sampler_chain_add(chain, llama_sampler_init_temp(temperature));
+        // slightly cooler default path if caller passes high temp
+        float t = temperature;
+        if (t > 0.9f) t = 0.9f;
+        llama_sampler_chain_add(chain, llama_sampler_init_temp(t));
         llama_sampler_chain_add(chain, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
     }
     return chain;
+}
+
+static bool looks_like_im_end(const std::string & out) {
+    return out.find("<|im_end|>") != std::string::npos
+        || out.find("<|endoftext|>") != std::string::npos
+        || out.find("<|im_start|>") != std::string::npos;
+}
+
+static std::string strip_special(const std::string & in) {
+    std::string s = in;
+    const char * tags[] = {
+        "<|im_end|>", "<|im_start|>", "<|endoftext|>",
+        "<|end|>", "</s>", "<s>", nullptr
+    };
+    for (int t = 0; tags[t]; ++t) {
+        size_t pos;
+        while ((pos = s.find(tags[t])) != std::string::npos) {
+            s.erase(pos, std::strlen(tags[t]));
+        }
+    }
+    return trim_copy(s);
 }
 
 static std::string generate_loop(
@@ -329,8 +470,11 @@ static std::string generate_loop(
 
     std::string out;
     std::vector<llama_token> gen;
-    const int max_new = max_tokens > 0 ? max_tokens : 128;
+    // Cap default lower — long gens on 0.5B almost always loop
+    int max_new = max_tokens > 0 ? max_tokens : 128;
+    if (max_new > 512) max_new = 512;
     int n_cur = n_tok;
+    bool stopped_loop = false;
 
     for (int step = 0; step < max_new; ++step) {
         if (n_cur >= n_ctx - 2) break;
@@ -345,18 +489,30 @@ static std::string generate_loop(
         gen.push_back(id);
         if (is_degenerate(gen)) {
             ALOGI("stop: degenerate token loop at step %d", step);
+            stopped_loop = true;
             break;
         }
 
         std::string piece = token_to_piece_str(vocab, id);
         if (!piece.empty()) {
             out += piece;
-            if (text_has_phrase_loop(out)) {
-                ALOGI("stop: phrase loop");
+
+            if (looks_like_im_end(out)) {
+                ALOGI("stop: special end tag");
+                out = strip_special(out);
                 break;
             }
+
+            if (text_has_paragraph_loop(out)) {
+                ALOGI("stop: paragraph/phrase loop at step %d len=%zu", step, out.size());
+                stopped_loop = true;
+                break;
+            }
+
             if (callback && onToken) {
-                jstring js = env->NewStringUTF(piece.c_str());
+                // Stream collapsed view so UI doesn't flash 3x loops mid-way
+                std::string view = collapse_repeats(strip_special(out));
+                jstring js = env->NewStringUTF(view.c_str());
                 env->CallVoidMethod(callback, onToken, js);
                 env->DeleteLocalRef(js);
             }
@@ -371,6 +527,20 @@ static std::string generate_loop(
     }
 
     llama_sampler_free(smpl);
+
+    out = strip_special(out);
+    out = collapse_repeats(out);
+    if (stopped_loop) {
+        ALOGI("final after loop-collapse len=%zu", out.size());
+    }
+
+    // Final stream push with cleaned text (engine accumulates pieces — but we now send full view each time)
+    if (callback && onToken && !out.empty()) {
+        jstring js = env->NewStringUTF(out.c_str());
+        env->CallVoidMethod(callback, onToken, js);
+        env->DeleteLocalRef(js);
+    }
+
     return out;
 }
 
