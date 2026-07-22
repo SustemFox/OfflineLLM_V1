@@ -14,7 +14,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
@@ -110,7 +113,6 @@ class ModelRepositoryImpl(
         val destFile = File(dir, "$modelId.gguf")
         val tempFile = File(dir, "$modelId.gguf.part")
 
-        // Resume support
         var resumeFrom = 0L
         if (tempFile.exists() && tempFile.length() > 0L) {
             resumeFrom = tempFile.length()
@@ -132,14 +134,23 @@ class ModelRepositoryImpl(
 
                 val c = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
                     instanceFollowRedirects = false
-                    connectTimeout = 30_000
-                    readTimeout = 120_000
+                    // Longer timeouts; avoid gzip (identity) so we get raw GGUF + Content-Length
+                    connectTimeout = 60_000
+                    readTimeout = 300_000
+                    // Prefer larger TCP receive buffer when the platform allows it
+                    try {
+                        // 1 MiB hint — ignored on some stacks, harmless
+                        // no setReceiveBufferSize on HttpURLConnection; OS default
+                    } catch (_: Throwable) {
+                    }
                     setRequestProperty(
                         "User-Agent",
-                        "OfflineLLM_V1/1.1 (Android; llama.cpp)"
+                        "OfflineLLM/1.5 (Android; HF-GGUF)"
                     )
-                    setRequestProperty("Accept", "*/*")
+                    setRequestProperty("Accept", "application/octet-stream,*/*")
                     setRequestProperty("Accept-Encoding", "identity")
+                    // Help CDN keep-alive
+                    setRequestProperty("Connection", "keep-alive")
                     if (hfToken.isNotBlank()) {
                         setRequestProperty("Authorization", "Bearer $hfToken")
                     }
@@ -160,7 +171,6 @@ class ModelRepositoryImpl(
                     }
                     return@repeat
                 }
-                // 200 full, 206 partial
                 if (code !in 200..299) {
                     val err = try {
                         c.errorStream?.bufferedReader()?.readText()?.take(300)
@@ -168,7 +178,6 @@ class ModelRepositoryImpl(
                         null
                     }
                     c.disconnect()
-                    // If range not supported, restart
                     if (resumeFrom > 0 && code == 416) {
                         resumeFrom = 0L
                         tempFile.delete()
@@ -177,7 +186,6 @@ class ModelRepositoryImpl(
                     error("HTTP $code${err?.let { ": $it" } ?: ""}")
                 }
                 if (code == 200 && resumeFrom > 0L) {
-                    // Server ignored Range — restart
                     resumeFrom = 0L
                     tempFile.delete()
                 }
@@ -190,54 +198,65 @@ class ModelRepositoryImpl(
             val totalBytes = when {
                 headerLen > 0 && resumeFrom > 0 && connection.responseCode == 206 ->
                     resumeFrom + headerLen
-                headerLen > 0 -> headerLen + (if (connection.responseCode == 206) resumeFrom else 0)
+                headerLen > 0 -> headerLen
                 else -> -1L
             }
             AppLogger.d("Download", "Total bytes est: $totalBytes resumeFrom=$resumeFrom")
 
-            connection.inputStream.use { input ->
-                tempFile.outputStream().let { raw ->
-                    // append if resuming
-                    val output = if (resumeFrom > 0L)
-                        java.io.FileOutputStream(tempFile, true)
-                    else
-                        java.io.FileOutputStream(tempFile, false)
-                    output.use { out ->
-                        val buffer = ByteArray(256 * 1024)
-                        var read: Int
-                        var totalRead = resumeFrom
-                        var lastEmitMs = 0L
-                        var lastLoggedPct = -1
-                        while (true) {
-                            currentCoroutineContext().ensureActive()
-                            if (cancelFlags[modelId] == true) {
-                                error("Download cancelled")
-                            }
-                            read = input.read(buffer)
-                            if (read <= 0) break
-                            out.write(buffer, 0, read)
-                            totalRead += read
+            // Fast path: large buffer + buffered streams; NO double-open of temp file
+            val buffer = ByteArray(BUFFER_SIZE)
+            BufferedInputStream(connection.inputStream, BUFFER_SIZE).use { input ->
+                BufferedOutputStream(
+                    FileOutputStream(tempFile, resumeFrom > 0L),
+                    BUFFER_SIZE
+                ).use { out ->
+                    var read: Int
+                    var totalRead = resumeFrom
+                    var lastEmitMs = 0L
+                    var lastLoggedPct = -1
+                    var lastBytesForSpeed = totalRead
+                    var lastSpeedMs = System.currentTimeMillis()
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        if (cancelFlags[modelId] == true) {
+                            error("Download cancelled")
+                        }
+                        read = input.read(buffer)
+                        if (read <= 0) break
+                        out.write(buffer, 0, read)
+                        totalRead += read
 
-                            val now = System.currentTimeMillis()
+                        val now = System.currentTimeMillis()
+                        // Throttle UI emits — frequent emit/notification was killing throughput
+                        if (now - lastEmitMs >= EMIT_INTERVAL_MS || totalBytes <= 0) {
                             val progress = if (totalBytes > 0) {
                                 (totalRead.toFloat() / totalBytes.toFloat()).coerceIn(0f, 0.999f)
-                            } else 0f
-                            if (now - lastEmitMs >= 200 || progress >= 0.999f) {
-                                emit(progress)
-                                lastEmitMs = now
+                            } else {
+                                // unknown size: pulse 0 so UI shows indeterminate, not fake %
+                                0f
                             }
-                            if (totalBytes > 0) {
-                                val pct = (progress * 100).toInt()
-                                if (pct / 5 != lastLoggedPct / 5) {
-                                    AppLogger.d("Download", "$modelId: $pct% ($totalRead / $totalBytes)")
-                                    lastLoggedPct = pct
-                                }
+                            emit(progress)
+                            lastEmitMs = now
+                        }
+                        if (totalBytes > 0) {
+                            val pct = ((totalRead * 100) / totalBytes).toInt()
+                            if (pct / 10 != lastLoggedPct / 10) {
+                                val dt = (now - lastSpeedMs).coerceAtLeast(1L)
+                                val db = totalRead - lastBytesForSpeed
+                                val mbps = (db * 1000.0 / dt) / (1024.0 * 1024.0)
+                                AppLogger.d(
+                                    "Download",
+                                    "$modelId: $pct% ($totalRead / $totalBytes) ~${"%.1f".format(mbps)} MB/s"
+                                )
+                                lastLoggedPct = pct
+                                lastBytesForSpeed = totalRead
+                                lastSpeedMs = now
                             }
                         }
-                        out.flush()
-                        AppLogger.d("Download", "$modelId complete! $totalRead bytes written")
-                        if (totalRead <= 0L) error("Empty download (0 bytes)")
                     }
+                    out.flush()
+                    AppLogger.d("Download", "$modelId complete! $totalRead bytes written")
+                    if (totalRead <= 0L) error("Empty download (0 bytes)")
                 }
             }
             connection.disconnect()
@@ -252,7 +271,6 @@ class ModelRepositoryImpl(
             emit(1f)
         } catch (e: Exception) {
             AppLogger.e("Download", "$modelId FAILED: ${e.message}", e)
-            // keep .part for resume unless cancelled
             if (e.message?.contains("cancel", ignoreCase = true) == true) {
                 tempFile.delete()
             }
@@ -271,5 +289,12 @@ class ModelRepositoryImpl(
             downloadedModelIds.remove(modelId)
             refreshModels()
         }
+    }
+
+    companion object {
+        /** 1 MiB chunks — fewer syscalls than 256 KiB */
+        private const val BUFFER_SIZE = 1 * 1024 * 1024
+        /** UI progress throttle (service also throttles notifications) */
+        private const val EMIT_INTERVAL_MS = 750L
     }
 }
