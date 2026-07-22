@@ -15,6 +15,8 @@ import com.example.offlinellm.data.local.AppPreferences
 import com.example.offlinellm.data.local.ChatHistoryStore
 import com.example.offlinellm.data.local.ModelsDirectoryManager
 import com.example.offlinellm.data.local.NetworkUtils
+import com.example.offlinellm.data.remote.HfGgufFile
+import com.example.offlinellm.data.remote.HfHubClient
 import com.example.offlinellm.data.repository.LocalLlmRepository
 import com.example.offlinellm.data.service.LlmHttpServer
 import com.example.offlinellm.data.service.ModelDownloadService
@@ -507,6 +509,113 @@ class ChatViewModel(
     }
 
     fun setHfUrlInput(url: String) = updateState { copy(hfUrlInput = url) }
+
+    fun setHfSearchQuery(q: String) = updateState { copy(hfSearchQuery = q) }
+
+    fun toggleHfManualUrl() = updateState { copy(hfShowManualUrl = !hfShowManualUrl) }
+
+    fun clearHfSelection() = updateState {
+        copy(hfSelectedRepo = null, hfFiles = emptyList(), hfFilesLoading = false)
+    }
+
+    fun searchHuggingFace() {
+        val q = _uiState.value.hfSearchQuery.trim()
+        if (q.isBlank()) {
+            systemMsg("Введи запрос для поиска на HF.")
+            return
+        }
+        viewModelScope.launch {
+            updateState {
+                copy(
+                    hfSearchLoading = true,
+                    hfSearchError = null,
+                    hfSelectedRepo = null,
+                    hfFiles = emptyList()
+                )
+            }
+            try {
+                val token = _uiState.value.hfToken.ifBlank { null }
+                val hits = withContext(Dispatchers.IO) {
+                    HfHubClient.searchGgufModels(q, token)
+                }
+                updateState {
+                    copy(
+                        hfSearchLoading = false,
+                        hfSearchResults = hits,
+                        hfSearchError = if (hits.isEmpty()) "Ничего не найдено по «$q»" else null
+                    )
+                }
+                if (hits.isNotEmpty()) {
+                    systemMsg("HF: найдено ${hits.size} GGUF-репо. Выбери репозиторий, затем .gguf.")
+                }
+            } catch (t: Throwable) {
+                AppLogger.e("ChatVM", "HF search: ${t.message}", t)
+                updateState {
+                    copy(
+                        hfSearchLoading = false,
+                        hfSearchResults = emptyList(),
+                        hfSearchError = t.message ?: "search failed"
+                    )
+                }
+                systemMsg("Поиск HF: ${t.message}")
+            }
+        }
+    }
+
+    fun selectHfRepo(repoId: String) {
+        viewModelScope.launch {
+            updateState {
+                copy(
+                    hfSelectedRepo = repoId,
+                    hfFilesLoading = true,
+                    hfFiles = emptyList(),
+                    hfSearchError = null
+                )
+            }
+            try {
+                val token = _uiState.value.hfToken.ifBlank { null }
+                val files = withContext(Dispatchers.IO) {
+                    HfHubClient.listGgufFiles(repoId, token)
+                }
+                updateState {
+                    copy(
+                        hfFilesLoading = false,
+                        hfFiles = files,
+                        hfSearchError = if (files.isEmpty()) {
+                            "В $repoId нет .gguf (или только mmproj)"
+                        } else null
+                    )
+                }
+            } catch (t: Throwable) {
+                AppLogger.e("ChatVM", "HF list: ${t.message}", t)
+                updateState {
+                    copy(
+                        hfFilesLoading = false,
+                        hfFiles = emptyList(),
+                        hfSearchError = t.message ?: "list failed"
+                    )
+                }
+                systemMsg("Список файлов HF: ${t.message}")
+            }
+        }
+    }
+
+    fun downloadHfFile(file: HfGgufFile) {
+        val repo = _uiState.value.hfSelectedRepo ?: "hf"
+        val info = ModelLoader.modelInfoFromUrl(file.resolveUrl)
+        val size = if (file.sizeBytes > 0L) file.sizeBytes else info.fileSizeBytes
+        downloadModel(
+            LlmModel(
+                id = info.id,
+                name = "${info.name} ($repo)",
+                sizeBytes = size,
+                downloadUrl = file.resolveUrl,
+                quantType = info.quantType,
+                parameterCount = info.parameterCount
+            )
+        )
+    }
+
 
     fun setAccelPref(pref: String) {
         AppPreferences.setAccelPref(application, pref)
