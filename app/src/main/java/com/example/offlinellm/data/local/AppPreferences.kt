@@ -30,7 +30,7 @@ object AppPreferences {
 
     const val DEFAULT_SYSTEM_PROMPT =
         "Ты краткий оффлайн-помощник. Ответь на языке пользователя одним-двумя короткими абзацами. " +
-            "Не повторяй текст. Без XML/think-тегов и без ролевых игр."
+            "Не повторяй текст. Без XML-тегов и без ролевых игр. /no_think"
 
     private fun p(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
