@@ -24,10 +24,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -112,48 +108,30 @@ internal fun ModelsTab(
         }
 
         item(key = "storage") {
-            var showPathInput by remember { mutableStateOf(false) }
-            var pathText by remember { mutableStateOf("") }
-            SettingsCard(title = "Хранилище моделей", subtitle = state.storagePath) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { folderPicker.launch(null) }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.FolderOpen, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Папка")
-                    }
-                    OutlinedButton(
-                        onClick = { showPathInput = !showPathInput },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Путь")
-                    }
+            SettingsCard(
+                title = "Хранилище моделей",
+                subtitle = state.storagePath
+            ) {
+                Text(
+                    "Выбор только через системный диалог папки (SAF).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { folderPicker.launch(null) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.FolderOpen, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Выбрать папку")
                 }
                 OutlinedButton(
                     onClick = cb.onResetStoragePath,
                     enabled = state.hasCustomStorage,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 ) {
-                    Text("Сбросить путь")
-                }
-                if (showPathInput) {
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = pathText,
-                        onValueChange = { pathText = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Абсолютный путь / URI") }
-                    )
-                    Button(
-                        onClick = {
-                            if (pathText.isNotBlank()) {
-                                cb.onSetStoragePath(pathText.trim())
-                                showPathInput = false
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                    ) {
-                        Text("Применить")
-                    }
+                    Text("Сбросить на внутреннюю память")
                 }
             }
         }
