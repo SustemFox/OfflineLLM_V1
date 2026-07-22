@@ -17,7 +17,7 @@ class LocalLlmRepository(
     private val engine = LlamaInferenceEngine(
         modelPath = modelPath,
         nCtx = AppPreferences.getNCtx(context),
-        nGpuLayers = 0,
+        nGpuLayers = AppPreferences.resolveNGpuLayers(context),
         threads = AppPreferences.getThreads(context),
         maxTokens = AppPreferences.getMaxTokens(context),
         temperature = AppPreferences.getTemperature(context),
