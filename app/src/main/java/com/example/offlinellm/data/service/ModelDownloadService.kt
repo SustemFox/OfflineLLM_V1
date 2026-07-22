@@ -14,7 +14,6 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.example.offlinellm.MainActivity
-import com.example.offlinellm.R
 import com.example.offlinellm.data.local.AppLogger
 import com.example.offlinellm.data.local.AppPreferences
 import com.example.offlinellm.data.repository.ModelRepositoryImpl
