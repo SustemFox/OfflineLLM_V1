@@ -2,7 +2,14 @@ package com.example.offlinellm.domain.model
 
 /**
  * Split model output into optional thinking + visible answer.
- * Supports <think>...</think>, <thinking>...</thinking>, and bare "Thinking:" prefixes.
+ *
+ * Small models (0.5B) often:
+ * - emit multiple <think> blocks
+ * - leave unclosed tags
+ * - put tags mid-sentence / after Chinese / with spaces: </ think>
+ * - repeat empty <think></think>
+ *
+ * We strip ALL think-like markup from the visible answer and collect thinking text.
  */
 object ResponseParser {
 
@@ -12,44 +19,96 @@ object ResponseParser {
         val thinkingComplete: Boolean
     )
 
-    private val TAG_PAIRS = listOf(
-        "think" to Regex("(?is)<think>(.*?)</think>\\s*"),
-        "thinking" to Regex("(?is)<thinking>(.*?)</thinking>\\s*"),
-        "reasoning" to Regex("(?is)<reasoning>(.*?)</reasoning>\\s*"),
+    private val TAG_NAMES = listOf("think", "thinking", "reasoning", "thought", "reflection")
+
+    /** <think>...</think> (allow spaces inside tag: </ think>) */
+    private val PAIR_RE = Regex(
+        """(?is)<\s*(think|thinking|reasoning|thought|reflection)\s*>(.*?)<\s*/\s*\1\s*>"""
+    )
+    private val OPEN_RE = Regex(
+        """(?is)<\s*(think|thinking|reasoning|thought|reflection)\s*>"""
+    )
+    private val CLOSE_RE = Regex(
+        """(?is)<\s*/\s*(think|thinking|reasoning|thought|reflection)\s*>"""
+    )
+    /** orphan bare tags without content */
+    private val ANY_TAG_RE = Regex(
+        """(?is)<\s*/?\s*(think|thinking|reasoning|thought|reflection)\s*>"""
     )
 
     fun parse(raw: String, showThinking: Boolean): Parts {
         if (raw.isEmpty()) return Parts(null, "", true)
 
-        for ((_, re) in TAG_PAIRS) {
-            val m = re.find(raw)
-            if (m != null) {
-                val think = m.groupValues[1].trim()
-                val answer = raw.replace(m.value, "").trim()
-                return Parts(
-                    thinking = if (showThinking) think.ifBlank { null } else null,
-                    answer = answer.ifBlank { if (!showThinking) raw.trim() else "" },
-                    thinkingComplete = true
-                )
+        val thinkChunks = mutableListOf<String>()
+        var work = raw
+        var thinkingComplete = true
+
+        // 1) Extract all well-formed pairs (repeat until stable)
+        var guard = 0
+        while (guard++ < 32) {
+            val m = PAIR_RE.find(work) ?: break
+            val body = m.groupValues[2].trim()
+            if (body.isNotEmpty()) thinkChunks += body
+            work = work.removeRange(m.range)
+        }
+
+        // 2) Unclosed open tag → rest is still "thinking" while streaming
+        val open = OPEN_RE.find(work)
+        if (open != null) {
+            val afterOpen = work.substring(open.range.last + 1)
+            val close = CLOSE_RE.find(afterOpen)
+            if (close == null) {
+                // still streaming thinking
+                val thinkPart = afterOpen.trim()
+                if (thinkPart.isNotEmpty()) thinkChunks += thinkPart
+                val before = work.substring(0, open.range.first)
+                work = before
+                thinkingComplete = false
+            } else {
+                // open...close with odd formatting already partially handled; strip leftover open..close
+                val body = afterOpen.substring(0, close.range.first).trim()
+                if (body.isNotEmpty()) thinkChunks += body
+                work = work.substring(0, open.range.first) + afterOpen.substring(close.range.last + 1)
             }
         }
 
-        // Open think tag still streaming
-        val open = Regex("(?is)<(think|thinking|reasoning)>")
-        val om = open.find(raw)
-        if (om != null) {
-            val after = raw.substring(om.range.last + 1)
-            val closeName = om.groupValues[1]
-            val closeIdx = after.indexOf("</$closeName>", ignoreCase = true)
-            if (closeIdx < 0) {
-                return Parts(
-                    thinking = if (showThinking) after.trim() else null,
-                    answer = if (showThinking) "" else raw,
-                    thinkingComplete = false
-                )
+        // 3) Strip any remaining orphan tags from answer
+        work = ANY_TAG_RE.replace(work, "")
+
+        // 4) Collapse whitespace noise from tag removal
+        val answer = work
+            .replace(Regex("[ \\t\\x0B\\f\\r]+"), " ")
+            .replace(Regex(" ?\\n ?"), "\n")
+            .replace(Regex("\\n{3,}"), "\n\n")
+            .trim()
+
+        val thinkingJoined = thinkChunks
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .joinToString("\n\n")
+            .ifBlank { null }
+
+        // If after stripping there's no answer but we had thinking and generation finished,
+        // show a short fallback so the bubble isn't empty-looking forever.
+        val finalAnswer = when {
+            answer.isNotEmpty() -> answer
+            !thinkingComplete -> "" // still streaming
+            thinkingJoined != null && !showThinking -> {
+                // User hid thinking — try to use last non-tag chunk as answer
+                thinkingJoined.lineSequence().lastOrNull()?.trim().orEmpty()
             }
+            else -> answer
         }
 
-        return Parts(thinking = null, answer = raw.trim(), thinkingComplete = true)
+        return Parts(
+            thinking = if (showThinking) thinkingJoined else null,
+            answer = finalAnswer,
+            thinkingComplete = thinkingComplete
+        )
     }
+
+    /** Hard cleanup for display of already-stored messages (history). */
+    fun stripThinkTags(text: String): String =
+        ANY_TAG_RE.replace(PAIR_RE.replace(text, ""), "").trim()
 }
