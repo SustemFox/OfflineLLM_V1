@@ -1,10 +1,14 @@
 package com.example.offlinellm.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -20,7 +24,11 @@ import com.example.offlinellm.ui.theme.ErrorBubble
 import com.example.offlinellm.ui.theme.UserBubble
 
 @Composable
-fun MessageItem(message: Message, modifier: Modifier = Modifier) {
+fun MessageItem(
+    message: Message,
+    onToggleThinking: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
     val isUser = message.sender == Message.Sender.USER
     val isSystem = message.sender == Message.Sender.SYSTEM
     val bubbleColor = when (message.sender) {
@@ -52,8 +60,43 @@ fun MessageItem(message: Message, modifier: Modifier = Modifier) {
                 .clip(RoundedCornerShape(12.dp))
                 .background(bubbleColor)
                 .padding(horizontal = 12.dp, vertical = if (isSystem) 8.dp else 12.dp)
+                .fillMaxWidth(if (isSystem) 0.95f else 0.88f)
         ) {
-            Text(text = message.text, color = textColor, style = style)
+            if (!message.thinking.isNullOrBlank() && message.sender == Message.Sender.LLM) {
+                val label = if (message.thinkingExpanded) "▾ Мышление" else "▸ Мышление"
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clickable(enabled = onToggleThinking != null) { onToggleThinking?.invoke() }
+                        .padding(bottom = 4.dp)
+                )
+                AnimatedVisibility(visible = message.thinkingExpanded) {
+                    Text(
+                        text = message.thinking ?: "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF444444),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0x22000000))
+                            .padding(8.dp)
+                    )
+                }
+                if (message.text.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                }
+            }
+            if (message.text.isNotBlank() || message.sender != Message.Sender.LLM) {
+                Text(text = message.text, color = textColor, style = style)
+            } else if (message.thinking != null && !message.thinkingExpanded) {
+                Text(
+                    text = "…",
+                    color = textColor.copy(alpha = 0.6f),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
     }
 }
