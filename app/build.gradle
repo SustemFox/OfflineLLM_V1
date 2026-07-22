@@ -106,16 +106,15 @@ android {
     ndkVersion '26.1.10909125'
 }
 
-// Clone llama.cpp before native build if missing (works even when workflow can't be edited)
 tasks.register('cloneLlamaCpp', Exec) {
     def dest = file('src/main/cpp/third_party/llama.cpp')
     outputs.dir(dest)
     onlyIf { !new File(dest, 'CMakeLists.txt').exists() }
     workingDir = file('src/main/cpp/third_party')
-    doFirst {
-        workingDir.mkdirs()
-    }
-    commandLine 'git', 'clone', '--depth', '1', 'https://github.com/ggml-org/llama.cpp.git', 'llama.cpp'
+    doFirst { workingDir.mkdirs() }
+    // pin tag used by CMake FetchContent as well
+    commandLine 'git', 'clone', '--depth', '1', '--branch', 'b5250',
+            'https://github.com/ggml-org/llama.cpp.git', 'llama.cpp'
 }
 
 tasks.configureEach { task ->
