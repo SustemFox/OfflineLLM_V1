@@ -154,15 +154,6 @@ class ChatViewModel(
         }
     }
 
-    private inline fun <T> persistPref(
-        crossinline write: (Context, T) -> Unit,
-        value: T,
-        crossinline map: ChatUiState.(T) -> ChatUiState,
-    ) {
-        write(application, value)
-        updateState { map(value) }
-    }
-
     // --- models / engine ---
 
     fun refreshModels() = loadModels()
