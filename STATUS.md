@@ -1,43 +1,31 @@
 # OfflineLLM_V1 — Статус
 
-> Текущая ветка: `main` @ `36514947`
-> Статус: ✅ CI green — release APK artifact **OfflineLLM-v1.0** (~12 MB zip)
+> Ветка: `main`
+> Фокус: **CPU native + JNI** (битый Vulkan prebuilt удалён)
 
-## Что сделано
+## Проблема (2026-07-22)
+- Краш на Send: `IllegalStateException: Failed to load native llama.cpp libraries`
+- Root cause:
+  1. `libggml-vulkan.so` corrupt (`invalid shdr offset/size`)
+  2. `libggml.so` / `libllama.so` **DT_NEEDED** → vulkan (нельзя просто «не грузить»)
+  3. В prebuilt `.so` **нет JNI symbols** (`Java_com_example_...`) — даже валидный load не дал бы `createContext`
 
-### Движок (llama.cpp + аппаратное ускорение)
-- ✅ JNI-мост в `LlamaBridge.kt`
-- ✅ Автовыбор бэкенда: Vulkan GPU → OpenCL GPU → CPU
-- ✅ Prebuilt .so для arm64-v8a
-- ✅ Потоковая генерация через Kotlin Flow
+## Fix
+- Kotlin: безопасный `LlamaBridge.load()`, CPU defaults, ошибки на Send/Select не роняют процесс
+- Удалены legacy jniLibs из packaging / CI wipe
+- Добавлены `app/src/main/cpp` + CMake: сборка **llama.cpp CPU-only** + `libofflinellm_jni.so`
+- CI клонирует llama.cpp и собирает APK artifact `OfflineLLM-v1.1-cpu`
 
-### HTTP-сервер (хостинг)
-- ✅ OpenAI-compatible API (`/v1/chat/completions`, `/v1/models`)
-- ✅ Ktor + Netty, порт 8080
-- ✅ `generate` callback из ChatViewModel → llmRepository
-
-### Модели / скачивание (2026-07-22)
-- ✅ Progress + cancel + `.gguf.part`
-- ✅ HF redirects, User-Agent, Accept-Encoding: identity
-- ✅ `downloadingModelId` для корректного UI на карточке
-- ✅ Indeterminate progress при unknown Content-Length
-- ✅ quantType / parameterCount в списке
-- ✅ deleteModel удаляет файл
-- ✅ «Выбрать» грузит модель в real llama.cpp
-
-### UI (2026-07-22)
-- ✅ Settings LazyColumn (CI compile fix)
-- ✅ TopAppBar назад, SAF folder picker, theme toggle
-- ✅ Download banner в chat + settings
-- ✅ System message styling
-
-### CI/CD
-- ✅ [Build 29860917812](https://github.com/SustemFox/OfflineLLM_V1/actions/runs/29860917812) success
-- ✅ Artifact: OfflineLLM-v1.0
+## Ускорение
+| Backend | Статус |
+|---|---|
+| CPU NEON | ✅ целевой путь v1.1 |
+| Vulkan | ❌ prebuilt битый; нужна отдельная валидная пересборка |
+| OpenCL | ❌ отключён (зависит от vendor libOpenCL) |
+| Hexagon NPU | ❌ .so нет в репо |
 
 ## Как пользоваться
-1. Actions → последний green run → скачать **OfflineLLM-v1.0**
-2. Установить APK на arm64 устройство
-3. ⚙ → скачать модель (лучше Qwen 2.5 1.5B для OnePlus 7)
-4. «Выбрать» → дождаться загрузки в движок
-5. Чат; опционально HTTP-сервер для Kai
+1. Actions → artifact **OfflineLLM-v1.1-cpu**
+2. Установить APK
+3. Скачать маленькую GGUF (Qwen 0.5B/1.5B Q4)
+4. «Выбрать» → дождаться load → Send
