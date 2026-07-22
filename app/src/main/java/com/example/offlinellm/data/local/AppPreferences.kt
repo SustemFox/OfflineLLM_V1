@@ -29,12 +29,7 @@ object AppPreferences {
     private const val KEY_N_GPU_LAYERS = "llm_n_gpu_layers"
 
     const val DEFAULT_SYSTEM_PROMPT =
-        "Ты — локальный оффлайн-ассистент на телефоне. Отвечай полезно и по делу. " +
-            "Не повторяй один и тот же абзац или фразу. Если нужна пошаговая мысль — " +
-            "сначала кратко в блоке <think>...</think>, затем обычный ответ пользователю. " +
-            "Данные никуда не отправляются."
-
-    private fun p(ctx: Context): SharedPreferences =
+        "Ты — локальный оффлайн-ассистент на телефоне. Отвечай кратко, по делу, на языке пользователя. Не используй XML/HTML-теги (в том числе think/thinking). Не повторяй один абзац или фразу. Не уходи в посторонние темы (колл-центр, китайский и т.п.), если пользователь об этом не просил. Данные никуда не отправляются."private fun p(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun isLogsEnabled(ctx: Context): Boolean =
@@ -131,9 +126,17 @@ object AppPreferences {
         p(ctx).edit().putInt(KEY_THREADS, v.coerceIn(1, 16)).apply()
     }
 
-    fun getSystemPrompt(ctx: Context): String =
-        p(ctx).getString(KEY_SYSTEM_PROMPT, null)?.takeIf { it.isNotBlank() }
-            ?: DEFAULT_SYSTEM_PROMPT
+    fun getSystemPrompt(ctx: Context): String {
+        val stored = p(ctx).getString(KEY_SYSTEM_PROMPT, null)?.takeIf { it.isNotBlank() }
+            ?: return DEFAULT_SYSTEM_PROMPT
+        // Migrate older prompt that forced <think> blocks (breaks tiny models / UI)
+        if (stored.contains("<think>") || stored.contains("</think>") ||
+            stored.contains("блоке <think") || stored.contains("chain-of-thought")
+        ) {
+            return DEFAULT_SYSTEM_PROMPT
+        }
+        return stored
+    }
 
     fun setSystemPrompt(ctx: Context, v: String) {
         p(ctx).edit().putString(KEY_SYSTEM_PROMPT, v).apply()
