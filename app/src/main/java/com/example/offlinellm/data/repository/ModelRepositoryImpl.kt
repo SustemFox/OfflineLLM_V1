@@ -2,6 +2,7 @@ package com.example.offlinellm.data.repository
 
 import android.content.Context
 import com.example.offlinellm.data.local.AppLogger
+import com.example.offlinellm.data.local.AppPreferences
 import com.example.offlinellm.domain.model.LlmModel
 import com.example.offlinellm.domain.repository.ModelRepository
 import com.example.offlinellm.llama.LlamaBridge
@@ -12,7 +13,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
@@ -50,7 +50,6 @@ class ModelRepositoryImpl(
         val localModels = ModelLoader.scanLocalModels(context)
         localModels.forEach { downloadedModelIds.add(it.id) }
 
-        // Also mark recommended ids if matching files exist under alternate names
         val recommended = ModelLoader.getRecommendedModels()
         val allModels = (recommended + localModels).distinctBy { it.id }.map { info ->
             val downloaded = downloadedModelIds.contains(info.id) ||
@@ -83,11 +82,9 @@ class ModelRepositoryImpl(
             File(dir, "$modelId.gguf"),
             File(dir, "$modelId.Q4_0.gguf"),
             File(dir, "$modelId.Q4_K_M.gguf"),
-            File(dir, modelId) // already includes extension edge-case
+            File(dir, modelId)
         )
         candidates.firstOrNull { it.isFile && it.length() > 0L }?.let { return it }
-
-        // Local scan may use filename-without-ext as id
         return dir.listFiles()
             ?.firstOrNull { f ->
                 f.isFile && f.extension.equals("gguf", true) &&
@@ -100,7 +97,6 @@ class ModelRepositoryImpl(
     override fun cancelDownload(modelId: String) {
         cancelFlags[modelId] = true
         AppLogger.d("Download", "cancel requested: $modelId")
-        // Best-effort: remove temp
         File(modelsDir, "$modelId.tmp").delete()
         File(modelsDir, "$modelId.gguf.part").delete()
     }
@@ -114,16 +110,22 @@ class ModelRepositoryImpl(
         val destFile = File(dir, "$modelId.gguf")
         val tempFile = File(dir, "$modelId.gguf.part")
 
+        // Resume support
+        var resumeFrom = 0L
+        if (tempFile.exists() && tempFile.length() > 0L) {
+            resumeFrom = tempFile.length()
+            AppLogger.d("Download", "Resuming from $resumeFrom bytes")
+        }
+
         AppLogger.d("Download", "Starting download: $modelId")
         AppLogger.d("Download", "URL: $downloadUrl")
         AppLogger.d("Download", "Destination: ${destFile.absolutePath}")
 
-        try {
-            if (tempFile.exists()) tempFile.delete()
+        val hfToken = AppPreferences.getHfToken(context)
 
+        try {
             var currentUrl = downloadUrl
             var conn: HttpURLConnection? = null
-            // Follow redirects manually (HF often 302) and keep HTTPS
             repeat(8) { hop ->
                 currentCoroutineContext().ensureActive()
                 if (cancelFlags[modelId] == true) error("Download cancelled")
@@ -134,11 +136,16 @@ class ModelRepositoryImpl(
                     readTimeout = 120_000
                     setRequestProperty(
                         "User-Agent",
-                        "OfflineLLM_V1/1.0 (Android; llama.cpp)"
+                        "OfflineLLM_V1/1.1 (Android; llama.cpp)"
                     )
                     setRequestProperty("Accept", "*/*")
-                    // Avoid compressed transfer so Content-Length matches bytes written
                     setRequestProperty("Accept-Encoding", "identity")
+                    if (hfToken.isNotBlank()) {
+                        setRequestProperty("Authorization", "Bearer $hfToken")
+                    }
+                    if (resumeFrom > 0L) {
+                        setRequestProperty("Range", "bytes=$resumeFrom-")
+                    }
                     requestMethod = "GET"
                 }
                 c.connect()
@@ -153,6 +160,7 @@ class ModelRepositoryImpl(
                     }
                     return@repeat
                 }
+                // 200 full, 206 partial
                 if (code !in 200..299) {
                     val err = try {
                         c.errorStream?.bufferedReader()?.readText()?.take(300)
@@ -160,7 +168,18 @@ class ModelRepositoryImpl(
                         null
                     }
                     c.disconnect()
+                    // If range not supported, restart
+                    if (resumeFrom > 0 && code == 416) {
+                        resumeFrom = 0L
+                        tempFile.delete()
+                        error("Range not satisfiable — retry without resume")
+                    }
                     error("HTTP $code${err?.let { ": $it" } ?: ""}")
+                }
+                if (code == 200 && resumeFrom > 0L) {
+                    // Server ignored Range — restart
+                    resumeFrom = 0L
+                    tempFile.delete()
                 }
                 conn = c
                 return@repeat
@@ -169,58 +188,56 @@ class ModelRepositoryImpl(
 
             val headerLen = connection.contentLengthLong
             val totalBytes = when {
-                headerLen > 0 -> headerLen
+                headerLen > 0 && resumeFrom > 0 && connection.responseCode == 206 ->
+                    resumeFrom + headerLen
+                headerLen > 0 -> headerLen + (if (connection.responseCode == 206) resumeFrom else 0)
                 else -> -1L
             }
-            AppLogger.d("Download", "Total bytes header: $totalBytes")
+            AppLogger.d("Download", "Total bytes est: $totalBytes resumeFrom=$resumeFrom")
 
             connection.inputStream.use { input ->
-                tempFile.outputStream().use { output ->
-                    val buffer = ByteArray(256 * 1024)
-                    var read: Int
-                    var totalRead = 0L
-                    var lastEmitMs = 0L
-                    var lastLoggedPct = -1
-                    while (true) {
-                        currentCoroutineContext().ensureActive()
-                        if (cancelFlags[modelId] == true) {
-                            error("Download cancelled")
-                        }
-                        read = input.read(buffer)
-                        if (read <= 0) break
-                        output.write(buffer, 0, read)
-                        totalRead += read
-
-                        val now = System.currentTimeMillis()
-                        val progress = if (totalBytes > 0) {
-                            (totalRead.toFloat() / totalBytes.toFloat()).coerceIn(0f, 0.999f)
-                        } else {
-                            // Unknown size: keep indeterminate (0f) but still "alive"
-                            0f
-                        }
-                        if (now - lastEmitMs >= 200 || progress >= 0.999f || totalBytes <= 0 && totalRead % (5L * 1024 * 1024) < buffer.size) {
-                            emit(progress)
-                            lastEmitMs = now
-                        }
-                        if (totalBytes > 0) {
-                            val pct = (progress * 100).toInt()
-                            if (pct / 5 != lastLoggedPct / 5) {
-                                AppLogger.d(
-                                    "Download",
-                                    "$modelId: $pct% ($totalRead / $totalBytes)"
-                                )
-                                lastLoggedPct = pct
+                tempFile.outputStream().let { raw ->
+                    // append if resuming
+                    val output = if (resumeFrom > 0L)
+                        java.io.FileOutputStream(tempFile, true)
+                    else
+                        java.io.FileOutputStream(tempFile, false)
+                    output.use { out ->
+                        val buffer = ByteArray(256 * 1024)
+                        var read: Int
+                        var totalRead = resumeFrom
+                        var lastEmitMs = 0L
+                        var lastLoggedPct = -1
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            if (cancelFlags[modelId] == true) {
+                                error("Download cancelled")
                             }
-                        } else if (totalRead % (25L * 1024 * 1024) < buffer.size) {
-                            AppLogger.d(
-                                "Download",
-                                "$modelId: $totalRead bytes (size unknown)"
-                            )
+                            read = input.read(buffer)
+                            if (read <= 0) break
+                            out.write(buffer, 0, read)
+                            totalRead += read
+
+                            val now = System.currentTimeMillis()
+                            val progress = if (totalBytes > 0) {
+                                (totalRead.toFloat() / totalBytes.toFloat()).coerceIn(0f, 0.999f)
+                            } else 0f
+                            if (now - lastEmitMs >= 200 || progress >= 0.999f) {
+                                emit(progress)
+                                lastEmitMs = now
+                            }
+                            if (totalBytes > 0) {
+                                val pct = (progress * 100).toInt()
+                                if (pct / 5 != lastLoggedPct / 5) {
+                                    AppLogger.d("Download", "$modelId: $pct% ($totalRead / $totalBytes)")
+                                    lastLoggedPct = pct
+                                }
+                            }
                         }
+                        out.flush()
+                        AppLogger.d("Download", "$modelId complete! $totalRead bytes written")
+                        if (totalRead <= 0L) error("Empty download (0 bytes)")
                     }
-                    output.flush()
-                    AppLogger.d("Download", "$modelId complete! $totalRead bytes written")
-                    if (totalRead <= 0L) error("Empty download (0 bytes)")
                 }
             }
             connection.disconnect()
@@ -235,7 +252,10 @@ class ModelRepositoryImpl(
             emit(1f)
         } catch (e: Exception) {
             AppLogger.e("Download", "$modelId FAILED: ${e.message}", e)
-            tempFile.delete()
+            // keep .part for resume unless cancelled
+            if (e.message?.contains("cancel", ignoreCase = true) == true) {
+                tempFile.delete()
+            }
             throw e
         } finally {
             cancelFlags.remove(modelId)
