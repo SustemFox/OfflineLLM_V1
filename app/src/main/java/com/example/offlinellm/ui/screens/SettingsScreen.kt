@@ -104,6 +104,7 @@ fun SettingsScreen(
     onShowThinking: (Boolean) -> Unit = {},
     onRepeatPenalty: (Float) -> Unit = {},
     onFrequencyPenalty: (Float) -> Unit = {},
+    onNGpuLayers: (Int) -> Unit = {},
 ) {
     var tabIndex by remember { mutableIntStateOf(0) }
     val tabs = SettingsTab.entries
@@ -171,6 +172,7 @@ fun SettingsScreen(
                     onRepeatPenalty = onRepeatPenalty,
                     onFrequencyPenalty = onFrequencyPenalty,
                     onAccelPref = onAccelPref,
+                    onNGpuLayers = onNGpuLayers,
                 )
                 SettingsTab.Server -> ServerTab(
                     state = state,
@@ -388,6 +390,7 @@ private fun LlmTab(
     onRepeatPenalty: (Float) -> Unit,
     onFrequencyPenalty: (Float) -> Unit,
     onAccelPref: (String) -> Unit,
+    onNGpuLayers: (Int) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -411,13 +414,13 @@ private fun LlmTab(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Ускоритель (предпочтение; runtime пока CPU)",
+                    "Ускоритель: OpenCL = Adreno GPU (эксп.). На Adreno 6xx часто fallback на CPU. Vulkan — шаг 2.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("auto" to "Auto", "cpu" to "CPU", "vulkan" to "Vulkan").forEach { (id, label) ->
+                    listOf("auto" to "Auto", "cpu" to "CPU", "opencl" to "OpenCL", "vulkan" to "Vulkan").forEach { (id, label) ->
                         FilterChip(
                             selected = state.accelPref == id,
                             onClick = { onAccelPref(id) },
@@ -489,6 +492,18 @@ private fun LlmTab(
                     onValueChange = { onThreads(it.roundToInt()) },
                     valueRange = 1f..8f,
                     steps = 6
+                )
+                Text("GPU layers (OpenCL offload): ${state.nGpuLayers}")
+                Text(
+                    "0 = только CPU; 99 ≈ все слои. Нужен повторный «Выбрать».",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Slider(
+                    value = state.nGpuLayers.toFloat().coerceIn(0f, 99f),
+                    onValueChange = { onNGpuLayers(it.roundToInt()) },
+                    valueRange = 0f..99f,
+                    steps = 98
                 )
             }
         }
