@@ -1,12 +1,14 @@
 # OfflineLLM_V1 — Статус
 
-> v1.3.0-llm — server IP/port, LLM settings, thinking UI, anti-repetition
+> v1.4.0-llama-b10079 — latest llama.cpp release pin, CPU-only
 
-## v1.3
-- HTTP: shows real LAN IP(s) + editable port (1024–65535), restart on apply
-- LLM settings: temperature, top_p, max tokens, n_ctx, threads, system prompt, show thinking, repeat/freq penalty
-- Chat: collapsible **Мышление** from `<think>` / `<thinking>` tags
-- JNI: repeat penalty + frequency penalty + loop/degenerate stop + top-k
+## Native
+- llama.cpp **b10079** (ggml-org release, not prerelease)
+- JNI: `llama_memory_clear` (was kv_self_clear), official `llama_sampler_chain` (penalties/top_k/top_p/temp)
+- Still **CPU-only** — OpenCL/Hexagon/Vulkan not linked (OP7 APU later)
 
-## CI tip
-Artifact OfflineLLM-v1.0 ; rebuild via empty commit OK.
+## App features (carry forward)
+- HTTP IP+port, LLM settings, thinking UI, HF download FGS, history
+
+## CI
+Artifact OfflineLLM-v1.0 ; GitHub App cannot edit workflows.
