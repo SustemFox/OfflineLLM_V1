@@ -36,7 +36,7 @@ static jstring to_jstring(JNIEnv * env, const std::string & s) {
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_example_offlinellm_llama_LlamaBridge_getBackendInfo(JNIEnv * env, jclass) {
-    return env->NewStringUTF("CPU (llama.cpp)");
+    return env->NewStringUTF("CPU (llama.cpp NEON)");
 }
 
 extern "C" JNIEXPORT jlong JNICALL
