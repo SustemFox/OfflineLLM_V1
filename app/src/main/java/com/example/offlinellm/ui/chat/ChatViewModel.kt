@@ -123,11 +123,17 @@ class ChatViewModel(
                         sender = Message.Sender.SYSTEM
                     )
                 )
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 AppLogger.e("ChatVM", "switchToRealEngine failed: ${e.message}", e)
+                try {
+                    AppProvider.initFake(application)
+                } catch (_: Throwable) {
+                }
+                _uiState.value = _uiState.value.copy(isRealEngine = false)
                 addMessage(
                     Message(
-                        text = "Не удалось загрузить модель: ${e.message}",
+                        text = "Не удалось загрузить модель: ${e.message}\n" +
+                            "Остаёмся в demo-режиме. Проверь native libs / GGUF.",
                         sender = Message.Sender.SYSTEM
                     )
                 )
@@ -180,38 +186,53 @@ class ChatViewModel(
     private fun generateRealResponse(prompt: String) {
         viewModelScope.launch(Dispatchers.IO) {
             var assistantMessage: Message? = null
-            AppProvider.llmRepository.generateResponse(prompt)
-                .onStart {
-                    withContext(Dispatchers.Main) {
-                        _uiState.value = _uiState.value.copy(isGenerating = true)
-                    }
+            try {
+                withContext(Dispatchers.Main) {
+                    _uiState.value = _uiState.value.copy(isGenerating = true)
                 }
-                .catch { error ->
-                    withContext(Dispatchers.Main) {
-                        addMessage(
-                            Message(
-                                text = "Error: ${error.message ?: "Inference failed"}",
-                                sender = Message.Sender.SYSTEM
+                AppProvider.llmRepository.generateResponse(prompt)
+                    .catch { error ->
+                        withContext(Dispatchers.Main) {
+                            addMessage(
+                                Message(
+                                    text = "Ошибка инференса: ${error.message ?: "Inference failed"}",
+                                    sender = Message.Sender.SYSTEM
+                                )
                             )
-                        )
-                    }
-                }
-                .onCompletion {
-                    withContext(Dispatchers.Main) {
-                        _uiState.value = _uiState.value.copy(isGenerating = false)
-                    }
-                }
-                .collect { token ->
-                    withContext(Dispatchers.Main) {
-                        if (assistantMessage == null) {
-                            assistantMessage = Message(text = token, sender = Message.Sender.LLM)
-                            addMessage(assistantMessage!!)
-                        } else {
-                            assistantMessage = assistantMessage!!.copy(text = token)
-                            updateLastMessage(assistantMessage!!)
                         }
                     }
+                    .collect { token ->
+                        withContext(Dispatchers.Main) {
+                            if (assistantMessage == null) {
+                                assistantMessage = Message(text = token, sender = Message.Sender.LLM)
+                                addMessage(assistantMessage!!)
+                            } else {
+                                assistantMessage = assistantMessage!!.copy(text = token)
+                                updateLastMessage(assistantMessage!!)
+                            }
+                        }
+                    }
+            } catch (t: Throwable) {
+                AppLogger.e("ChatVM", "generateRealResponse failed: ${t.message}", t)
+                withContext(Dispatchers.Main) {
+                    addMessage(
+                        Message(
+                            text = "Ошибка инференса: ${t.message ?: t.javaClass.simpleName}",
+                            sender = Message.Sender.SYSTEM
+                        )
+                    )
+                    // Fall back to fake so UI stays usable
+                    try {
+                        AppProvider.initFake(application)
+                        _uiState.value = _uiState.value.copy(isRealEngine = false)
+                    } catch (_: Throwable) {
+                    }
                 }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    _uiState.value = _uiState.value.copy(isGenerating = false)
+                }
+            }
         }
     }
 
