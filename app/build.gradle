@@ -1,4 +1,4 @@
-// ci-trigger: hf-search-20260722b
+// ci-trigger: empty-fix-20260722
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
@@ -13,8 +13,8 @@ android {
         applicationId 'com.example.offlinellm'
         minSdk 26
         targetSdk 34
-        versionCode 17
-        versionName '1.5.10-hf-search'
+        versionCode 18
+        versionName '1.5.11-empty-fix'
 
         ndk {
             abiFilters 'arm64-v8a'
