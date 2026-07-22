@@ -1,6 +1,7 @@
 package com.example.offlinellm.di
 
 import android.content.Context
+import com.example.offlinellm.data.local.AppLogger
 import com.example.offlinellm.data.repository.FakeLlmRepository
 import com.example.offlinellm.data.repository.LocalLlmRepository
 import com.example.offlinellm.data.repository.ModelRepositoryImpl
@@ -22,13 +23,23 @@ object AppProvider {
     /** Whether to use fake implementations (UI dev without model). */
     var useFake: Boolean = true
 
-    /** Initialize with real llama.cpp engine. Call after loading native libs. */
+    /** Initialize with real llama.cpp engine. Throws if native/model load fails. */
     fun initRealEngine(context: Context, modelPath: String) {
         this.context = context
-        llmRepository = LocalLlmRepository(context, modelPath)
+        if (!LlamaBridge.load()) {
+            throw IllegalStateException(
+                "Native llama libraries unavailable" +
+                    (LlamaBridge.lastError?.let { ": $it" } ?: "")
+            )
+        }
+        val repo = LocalLlmRepository(context, modelPath)
+        // Eager load so failures surface here (not on first Send)
+        repo.ensureReady()
+        llmRepository = repo
         modelRepository = ModelRepositoryImpl(context)
         isRealEngine = true
         useFake = false
+        AppLogger.d("AppProvider", "Real engine ready path=$modelPath backend=${LlamaBridge.backendName}")
     }
 
     /** Initialize with fake implementations (for UI development). */
@@ -43,7 +54,6 @@ object AppProvider {
     /** Check if native libraries are available on this device. */
     fun isNativeAvailable(): Boolean = try {
         LlamaBridge.load()
-        true
     } catch (_: Throwable) {
         false
     }
