@@ -8,12 +8,14 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * In-memory ring-buffer logger for debugging downloads, model loading, etc.
- * Holds the last 500 entries, accessible from Settings.
+ * In-memory ring-buffer logger. Can be disabled via prefs (toggle persists).
  */
 object AppLogger {
 
     private const val MAX_ENTRIES = 500
+
+    @Volatile
+    private var enabled: Boolean = true
 
     private val buffer = mutableListOf<LogEntry>()
     private val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
@@ -24,7 +26,18 @@ object AppLogger {
         val message: String
     )
 
+    fun setEnabled(value: Boolean) {
+        enabled = value
+        android.util.Log.d("AppLogger", "logging enabled=$value")
+    }
+
+    fun isEnabled(): Boolean = enabled
+
     fun d(tag: String, message: String) {
+        if (!enabled) {
+            // still emit to logcat at verbose only when disabled? skip both for privacy/perf
+            return
+        }
         val entry = LogEntry(
             timestamp = dateFormat.format(Date()),
             tag = tag,
@@ -41,7 +54,19 @@ object AppLogger {
 
     fun e(tag: String, message: String, throwable: Throwable? = null) {
         val msg = if (throwable != null) "$message: ${throwable.message}" else message
-        d(tag, msg)
+        // errors always go to logcat; buffer only if enabled
+        android.util.Log.e(tag, msg, throwable)
+        if (enabled) {
+            val entry = LogEntry(
+                timestamp = dateFormat.format(Date()),
+                tag = tag,
+                message = msg
+            )
+            synchronized(buffer) {
+                buffer.add(entry)
+                if (buffer.size > MAX_ENTRIES) buffer.removeAt(0)
+            }
+        }
     }
 
     fun getLogs(): List<LogEntry> = synchronized(buffer) { buffer.toList() }
