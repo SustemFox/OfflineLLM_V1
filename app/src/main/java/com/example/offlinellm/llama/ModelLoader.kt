@@ -23,6 +23,15 @@ object ModelLoader {
         ModelsDirectoryManager.getModelsDirectory(context)
 
     fun scanLocalModels(context: Context): List<GgufModelInfo> {
+        if (ModelsDirectoryManager.isSafMode(context)) {
+            val docs = ModelsDirectoryManager.listGguf(context)
+            AppLogger.d("ModelLoader", "Scanning SAF: ${docs.size} gguf")
+            return docs.mapNotNull { doc ->
+                val name = doc.name ?: return@mapNotNull null
+                parseModelName(name, doc.length(), filePath = "")
+            }.sortedByDescending { it.fileSizeBytes }
+        }
+
         val modelsDir = getModelsDirectory(context)
         AppLogger.d("ModelLoader", "Scanning: ${modelsDir.absolutePath}")
         if (!modelsDir.exists()) {
@@ -87,9 +96,6 @@ object ModelLoader {
         ),
     )
 
-    /**
-     * Build model id + display name from a Hugging Face resolve URL or direct .gguf URL.
-     */
     fun modelInfoFromUrl(url: String): GgufModelInfo {
         val clean = url.trim().substringBefore("?").substringBefore("#")
         val fileName = try {
@@ -116,8 +122,11 @@ object ModelLoader {
         )
     }
 
-    private fun parseModelFile(file: File): GgufModelInfo {
-        val name = file.nameWithoutExtension
+    private fun parseModelFile(file: File): GgufModelInfo =
+        parseModelName(file.name, file.length(), file.absolutePath)
+
+    private fun parseModelName(fileName: String, size: Long, filePath: String): GgufModelInfo {
+        val name = if (fileName.endsWith(".gguf", true)) fileName.dropLast(5) else fileName
         val paramMatch = Regex("""(\d+\.?\d*)[bB]""").find(name)
         val paramStr = paramMatch?.groupValues?.get(0)?.uppercase() ?: "?B"
         val quantMatch = Regex("""(Q[0-9]_[0-9A-Z_]+|IQ[0-9]_[A-Z0-9_]+)""", RegexOption.IGNORE_CASE).find(name)
@@ -127,8 +136,8 @@ object ModelLoader {
             name = name.replace("-", " ").replace("_", " ")
                 .split(" ")
                 .joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } },
-            filePath = file.absolutePath,
-            fileSizeBytes = file.length(),
+            filePath = filePath,
+            fileSizeBytes = size,
             quantType = quant,
             parameterCount = paramStr
         )
