@@ -12,8 +12,8 @@ android {
         applicationId 'com.example.offlinellm'
         minSdk 26
         targetSdk 34
-        versionCode 4
-        versionName '1.3.0-llm'
+        versionCode 5
+        versionName '1.4.0-llama-b10079'
 
         ndk {
             abiFilters 'arm64-v8a'
@@ -23,7 +23,8 @@ android {
             cmake {
                 cppFlags '-std=c++17 -O3 -fvisibility=hidden'
                 arguments '-DANDROID_STL=c++_shared',
-                          '-DGGML_NATIVE=OFF'
+                          '-DGGML_NATIVE=OFF',
+                          '-DOFFLINELLM_LLAMA_TAG=b10079'
             }
         }
     }
@@ -113,7 +114,7 @@ tasks.register('cloneLlamaCpp', Exec) {
     workingDir = file('src/main/cpp/third_party')
     doFirst { workingDir.mkdirs() }
     // pin tag used by CMake FetchContent as well
-    commandLine 'git', 'clone', '--depth', '1', '--branch', 'b5250',
+    commandLine 'git', 'clone', '--depth', '1', '--branch', 'b10079',
             'https://github.com/ggml-org/llama.cpp.git', 'llama.cpp'
 }
 
