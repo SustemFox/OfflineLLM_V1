@@ -97,7 +97,7 @@ object ResponseParser {
             // Think-only completion (common on Qwen3/3.5 if stop fired early or /no_think ignored)
             thinkingJoined != null -> {
                 // Prefer last paragraph of thinking as visible answer so bubble is never blank
-                val lines = thinkingJoined.split(Regex("\n\s*\n")).map { it.trim() }.filter { it.isNotEmpty() }
+                val lines = thinkingJoined.split(Regex("""\n\s*\n""")).map { it.trim() }.filter { it.isNotEmpty() }
                 lines.lastOrNull() ?: thinkingJoined.take(400)
             }
             else -> answer
