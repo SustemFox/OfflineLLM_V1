@@ -113,7 +113,8 @@ internal fun ModelsTab(
                 subtitle = state.storagePath
             ) {
                 Text(
-                    "Выбор только через системный диалог папки (SAF).",
+                    "Системный выбор папки (SAF). Запись идёт через URI, не через путь /storage/… " +
+                        "(иначе EACCES). Для llama файл кэшируется во внутренней памяти при «Выбрать».",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
