@@ -12,8 +12,8 @@ android {
         applicationId 'com.example.offlinellm'
         minSdk 26
         targetSdk 34
-        versionCode 8
-        versionName '1.5.1-refactor'
+        versionCode 9
+        versionName '1.5.2-dl-fast'
 
         ndk {
             abiFilters 'arm64-v8a'
