@@ -16,6 +16,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.offlinellm.ui.chat.ChatViewModel
 import com.example.offlinellm.ui.screens.ChatScreen
+import com.example.offlinellm.ui.screens.SettingsCallbacks
 import com.example.offlinellm.ui.screens.SettingsScreen
 import com.example.offlinellm.ui.theme.OfflineLlmTheme
 
@@ -52,36 +53,38 @@ fun AppRoot() {
             composable("settings") {
                 SettingsScreen(
                     state = state,
-                    onBack = { navController.popBackStack() },
-                    onToggleServer = { viewModel.toggleServer(it) },
-                    onDownloadModel = { viewModel.downloadModel(it) },
-                    onCancelDownload = { viewModel.cancelDownload() },
-                    onDeleteModel = { viewModel.deleteModel(it) },
-                    onSelectModel = { viewModel.selectModel(it) },
-                    onRefresh = { viewModel.refreshModels() },
-                    onSetStoragePath = { viewModel.setCustomStoragePath(it) },
-                    onResetStoragePath = { viewModel.resetStoragePath() },
-                    onToggleTheme = { viewModel.toggleTheme() },
-                    onSetLogsEnabled = { viewModel.setLogsEnabled(it) },
-                    onSetLogsPanelExpanded = { viewModel.setLogsPanelExpanded(it) },
-                    onHfTokenChange = { viewModel.setHfToken(it) },
-                    onHfUrlChange = { viewModel.setHfUrlInput(it) },
-                    onDownloadHfUrl = { viewModel.downloadFromHfUrl() },
-                    onClearChat = { viewModel.clearChat() },
-                    onAccelPref = { viewModel.setAccelPref(it) },
-                    onServerPortInput = { viewModel.setServerPortInput(it) },
-                    onApplyServerPort = { viewModel.applyServerPort() },
-                    onRefreshIps = { viewModel.refreshLocalIps() },
-                    onTemperature = { viewModel.setTemperature(it) },
-                    onTopP = { viewModel.setTopP(it) },
-                    onMaxTokens = { viewModel.setMaxTokens(it) },
-                    onNCtx = { viewModel.setNCtx(it) },
-                    onThreads = { viewModel.setThreads(it) },
-                    onSystemPrompt = { viewModel.setSystemPrompt(it) },
-                    onShowThinking = { viewModel.setShowThinking(it) },
-                    onRepeatPenalty = { viewModel.setRepeatPenalty(it) },
-                    onFrequencyPenalty = { viewModel.setFrequencyPenalty(it) },
-                    onNGpuLayers = { viewModel.setNGpuLayers(it) },
+                    callbacks = SettingsCallbacks(
+                        onBack = { navController.popBackStack() },
+                        onToggleServer = viewModel::toggleServer,
+                        onDownloadModel = viewModel::downloadModel,
+                        onCancelDownload = viewModel::cancelDownload,
+                        onDeleteModel = viewModel::deleteModel,
+                        onSelectModel = viewModel::selectModel,
+                        onRefresh = viewModel::refreshModels,
+                        onSetStoragePath = viewModel::setCustomStoragePath,
+                        onResetStoragePath = viewModel::resetStoragePath,
+                        onToggleTheme = viewModel::toggleTheme,
+                        onSetLogsEnabled = viewModel::setLogsEnabled,
+                        onSetLogsPanelExpanded = viewModel::setLogsPanelExpanded,
+                        onHfTokenChange = viewModel::setHfToken,
+                        onHfUrlChange = viewModel::setHfUrlInput,
+                        onDownloadHfUrl = viewModel::downloadFromHfUrl,
+                        onClearChat = viewModel::clearChat,
+                        onAccelPref = viewModel::setAccelPref,
+                        onServerPortInput = viewModel::setServerPortInput,
+                        onApplyServerPort = viewModel::applyServerPort,
+                        onRefreshIps = viewModel::refreshLocalIps,
+                        onTemperature = viewModel::setTemperature,
+                        onTopP = viewModel::setTopP,
+                        onMaxTokens = viewModel::setMaxTokens,
+                        onNCtx = viewModel::setNCtx,
+                        onThreads = viewModel::setThreads,
+                        onSystemPrompt = viewModel::setSystemPrompt,
+                        onShowThinking = viewModel::setShowThinking,
+                        onRepeatPenalty = viewModel::setRepeatPenalty,
+                        onFrequencyPenalty = viewModel::setFrequencyPenalty,
+                        onNGpuLayers = viewModel::setNGpuLayers,
+                    ),
                 )
             }
         }
