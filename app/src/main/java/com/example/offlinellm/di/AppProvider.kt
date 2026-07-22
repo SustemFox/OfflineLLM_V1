@@ -24,7 +24,7 @@ object AppProvider {
     var useFake: Boolean = true
 
     /** Initialize with real llama.cpp engine. Throws if native/model load fails. */
-    fun initRealEngine(context: Context, modelPath: String) {
+    suspend fun initRealEngine(context: Context, modelPath: String) {
         this.context = context
         if (!LlamaBridge.load()) {
             throw IllegalStateException(
