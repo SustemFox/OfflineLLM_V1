@@ -7,7 +7,6 @@
 #include <cstring>
 #include <mutex>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "llama.h"
@@ -15,6 +14,10 @@
 #define LOG_TAG "OfflineLLM_JNI"
 #define ALOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+
+#ifndef OFFLINELLM_LLAMA_TAG
+#define OFFLINELLM_LLAMA_TAG "unknown"
+#endif
 
 struct ContextHandle {
     llama_model * model = nullptr;
@@ -37,7 +40,8 @@ static jstring to_jstring(JNIEnv * env, const std::string & s) {
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_example_offlinellm_llama_LlamaBridge_getBackendInfo(JNIEnv * env, jclass) {
-    return env->NewStringUTF("CPU (llama.cpp NEON)");
+    std::string s = std::string("CPU (llama.cpp ") + OFFLINELLM_LLAMA_TAG + " NEON)";
+    return env->NewStringUTF(s.c_str());
 }
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -45,7 +49,8 @@ Java_com_example_offlinellm_llama_LlamaBridge_createContext(
         JNIEnv * env, jclass,
         jstring jpath, jint n_ctx, jint /*n_gpu_layers*/, jint n_threads) {
     const std::string path = jstring_to_string(env, jpath);
-    ALOGI("createContext path=%s n_ctx=%d threads=%d", path.c_str(), (int)n_ctx, (int)n_threads);
+    ALOGI("createContext path=%s n_ctx=%d threads=%d tag=%s",
+          path.c_str(), (int)n_ctx, (int)n_threads, OFFLINELLM_LLAMA_TAG);
 
     llama_backend_init();
 
@@ -82,7 +87,7 @@ Java_com_example_offlinellm_llama_LlamaBridge_createContext(
     handle->model = model;
     handle->ctx = ctx;
     handle->vocab = vocab;
-    ALOGI("context ready");
+    ALOGI("context ready tag=%s", OFFLINELLM_LLAMA_TAG);
     return reinterpret_cast<jlong>(handle);
 }
 
@@ -110,8 +115,12 @@ static std::string build_prompt(const std::string & system, const std::string & 
     return "User: " + user + "\nAssistant:";
 }
 
-static void clear_kv(llama_context * ctx) {
-    llama_kv_self_clear(ctx);
+static void clear_memory(llama_context * ctx) {
+    llama_memory_t mem = llama_get_memory(ctx);
+    if (mem) {
+        // data=true clears KV data + metadata (replacement for llama_kv_self_clear)
+        llama_memory_clear(mem, true);
+    }
 }
 
 static std::string token_to_piece_str(const llama_vocab * vocab, llama_token token) {
@@ -130,109 +139,8 @@ static std::string token_to_piece_str(const llama_vocab * vocab, llama_token tok
     return std::string(buf, buf + n);
 }
 
-// Apply penalties to logits using generated token history
-static void apply_penalties(
-        float * logits,
-        int n_vocab,
-        const std::vector<llama_token> & gen,
-        float repeat_penalty,
-        float frequency_penalty) {
-    if (gen.empty()) return;
-    if (repeat_penalty <= 1.001f && frequency_penalty <= 0.001f) return;
-
-    std::unordered_map<int, int> counts;
-    // last 128 tokens window
-    const size_t start = gen.size() > 128 ? gen.size() - 128 : 0;
-    for (size_t i = start; i < gen.size(); ++i) {
-        counts[(int)gen[i]]++;
-    }
-    for (const auto & kv : counts) {
-        int id = kv.first;
-        if (id < 0 || id >= n_vocab) continue;
-        float & l = logits[id];
-        if (repeat_penalty > 1.0f) {
-            // classic llama.cpp-style: divide if positive, multiply if negative
-            if (l > 0) l /= repeat_penalty;
-            else l *= repeat_penalty;
-        }
-        if (frequency_penalty > 0.f) {
-            l -= frequency_penalty * (float)kv.second;
-        }
-    }
-}
-
-static llama_token sample_temp(
-        float * logits,
-        int n_vocab,
-        float temperature,
-        float top_p,
-        const std::vector<llama_token> & gen,
-        float repeat_penalty,
-        float frequency_penalty) {
-
-    apply_penalties(logits, n_vocab, gen, repeat_penalty, frequency_penalty);
-
-    if (temperature <= 0.01f) {
-        int best = 0;
-        float best_v = logits[0];
-        for (int i = 1; i < n_vocab; ++i) {
-            if (logits[i] > best_v) {
-                best_v = logits[i];
-                best = i;
-            }
-        }
-        return (llama_token)best;
-    }
-
-    std::vector<std::pair<float, int>> probs;
-    probs.reserve((size_t)n_vocab);
-    float max_l = logits[0];
-    for (int i = 1; i < n_vocab; ++i) {
-        if (logits[i] > max_l) max_l = logits[i];
-    }
-    float sum = 0.f;
-    for (int i = 0; i < n_vocab; ++i) {
-        float p = expf((logits[i] - max_l) / temperature);
-        probs.emplace_back(p, i);
-        sum += p;
-    }
-    for (auto & pr : probs) pr.first /= sum;
-    std::sort(probs.begin(), probs.end(), [](const auto & a, const auto & b) {
-        return a.first > b.first;
-    });
-    // top-k soft cap to reduce degenerate tails
-    const size_t top_k = 40;
-    if (probs.size() > top_k) probs.resize(top_k);
-    {
-        float s2 = 0.f;
-        for (auto & pr : probs) s2 += pr.first;
-        for (auto & pr : probs) pr.first /= s2;
-    }
-    if (top_p < 1.0f && top_p > 0.0f) {
-        float cum = 0.f;
-        size_t cut = 0;
-        for (; cut < probs.size(); ++cut) {
-            cum += probs[cut].first;
-            if (cum >= top_p) break;
-        }
-        probs.resize(cut + 1);
-        float s2 = 0.f;
-        for (auto & pr : probs) s2 += pr.first;
-        for (auto & pr : probs) pr.first /= s2;
-    }
-    float r = (float)rand() / (float)RAND_MAX;
-    float cum = 0.f;
-    for (auto & pr : probs) {
-        cum += pr.first;
-        if (r <= cum) return (llama_token)pr.second;
-    }
-    return (llama_token)probs.back().second;
-}
-
-// Detect pathological loops: same token N times, or short cycle in last tokens
 static bool is_degenerate(const std::vector<llama_token> & gen) {
     if (gen.size() < 8) return false;
-    // same last token repeated 12+ times
     {
         llama_token last = gen.back();
         int c = 0;
@@ -242,7 +150,6 @@ static bool is_degenerate(const std::vector<llama_token> & gen) {
         }
         if (c >= 12) return true;
     }
-    // cycle length 1..12 that repeats 4 times
     for (int cycle = 1; cycle <= 12; ++cycle) {
         if ((int)gen.size() < cycle * 4) continue;
         bool ok = true;
@@ -260,13 +167,10 @@ static bool is_degenerate(const std::vector<llama_token> & gen) {
 
 static bool text_has_phrase_loop(const std::string & out) {
     if (out.size() < 80) return false;
-    // if last 40 chars appear twice in last 200 chars
     const size_t n = out.size();
     const size_t win = std::min<size_t>(60, n / 3);
     if (win < 20) return false;
     std::string tail = out.substr(n - win);
-    std::string body = out.substr(n > 240 ? n - 240 : 0, n - win - (n > 240 ? n - 240 : 0) + (n > 240 ? 240 - win : n - win));
-    // simpler: count occurrences of tail in last 300
     std::string region = out.substr(n > 300 ? n - 300 : 0);
     size_t pos = 0;
     int hits = 0;
@@ -276,6 +180,35 @@ static bool text_has_phrase_loop(const std::string & out) {
         if (hits >= 3) return true;
     }
     return false;
+}
+
+static llama_sampler * make_sampler(
+        float temperature,
+        float top_p,
+        float repeat_penalty,
+        float frequency_penalty) {
+    auto sparams = llama_sampler_chain_default_params();
+    llama_sampler * chain = llama_sampler_chain_init(sparams);
+    if (!chain) return nullptr;
+
+    // penalties: last_n=-1 (ctx), repeat, freq, present=0
+    const float rep = repeat_penalty > 0.f ? repeat_penalty : 1.0f;
+    const float freq = frequency_penalty >= 0.f ? frequency_penalty : 0.f;
+    llama_sampler_chain_add(chain, llama_sampler_init_penalties(-1, rep, freq, 0.0f));
+
+    // top-k then top-p then temp then dist
+    llama_sampler_chain_add(chain, llama_sampler_init_top_k(40));
+    const float tp = (top_p > 0.f && top_p <= 1.f) ? top_p : 0.9f;
+    llama_sampler_chain_add(chain, llama_sampler_init_top_p(tp, 1));
+
+    const float temp = temperature > 0.01f ? temperature : 0.01f;
+    if (temperature <= 0.01f) {
+        llama_sampler_chain_add(chain, llama_sampler_init_greedy());
+    } else {
+        llama_sampler_chain_add(chain, llama_sampler_init_temp(temp));
+        llama_sampler_chain_add(chain, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    }
+    return chain;
 }
 
 static std::string generate_loop(
@@ -294,7 +227,7 @@ static std::string generate_loop(
         return "ERROR: null context";
     }
 
-    clear_kv(handle->ctx);
+    clear_memory(handle->ctx);
 
     const llama_vocab * vocab = handle->vocab;
     const std::string full = build_prompt(system, user);
@@ -331,12 +264,18 @@ static std::string generate_loop(
         return "ERROR: prompt too long for n_ctx";
     }
 
+    // Evaluate prompt (batch_get_one is still 2-arg on b10079)
     for (int i = 0; i < n_tok; ++i) {
         llama_batch batch = llama_batch_get_one(&tokens[(size_t)i], 1);
         if (llama_decode(handle->ctx, batch) != 0) {
             ALOGE("prompt decode fail at %d", i);
             return "ERROR: prompt decode failed";
         }
+    }
+
+    llama_sampler * smpl = make_sampler(temperature, top_p, repeat_penalty, frequency_penalty);
+    if (!smpl) {
+        return "ERROR: sampler init failed";
     }
 
     jmethodID onToken = nullptr;
@@ -349,27 +288,12 @@ static std::string generate_loop(
     std::vector<llama_token> gen;
     const int max_new = max_tokens > 0 ? max_tokens : 128;
     int n_cur = n_tok;
-    const int n_vocab = llama_vocab_n_tokens(vocab);
-    if (n_vocab <= 0) {
-        return "ERROR: n_vocab";
-    }
-
-    // copy logits buffer (penalties mutate)
-    std::vector<float> logits_buf;
 
     for (int step = 0; step < max_new; ++step) {
         if (n_cur >= n_ctx - 2) break;
 
-        float * logits = llama_get_logits_ith(handle->ctx, -1);
-        if (!logits) {
-            ALOGE("no logits");
-            break;
-        }
-        logits_buf.assign(logits, logits + n_vocab);
-
-        llama_token id = sample_temp(
-            logits_buf.data(), n_vocab, temperature, top_p, gen,
-            repeat_penalty, frequency_penalty);
+        llama_token id = llama_sampler_sample(smpl, handle->ctx, -1);
+        llama_sampler_accept(smpl, id);
 
         if (llama_vocab_is_eog(vocab, id)) {
             break;
@@ -386,7 +310,6 @@ static std::string generate_loop(
             out += piece;
             if (text_has_phrase_loop(out)) {
                 ALOGI("stop: phrase loop");
-                // trim last repeated chunk softly
                 break;
             }
             if (callback && onToken) {
@@ -403,6 +326,8 @@ static std::string generate_loop(
         }
         n_cur++;
     }
+
+    llama_sampler_free(smpl);
     return out;
 }
 
@@ -455,5 +380,6 @@ Java_com_example_offlinellm_llama_LlamaBridge_runInferenceStream(
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_example_offlinellm_llama_LlamaBridge_benchmark(
         JNIEnv * env, jclass, jlong, jint, jint) {
-    return env->NewStringUTF("benchmark: n/a (CPU JNI)");
+    std::string s = std::string("benchmark: n/a (CPU JNI ") + OFFLINELLM_LLAMA_TAG + ")";
+    return env->NewStringUTF(s.c_str());
 }
