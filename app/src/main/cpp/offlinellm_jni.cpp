@@ -379,24 +379,50 @@ static llama_sampler * make_sampler(
     return chain;
 }
 
+/** Only true stop tokens — NOT <think> (Qwen3/3.5 often starts with think tags). */
 static bool looks_like_im_end(const std::string & out) {
     return out.find("<|im_end|>") != std::string::npos
-        || out.find("</think>") != std::string::npos
-        || out.find("<think>") != std::string::npos
         || out.find("<|endoftext|>") != std::string::npos
-        || out.find("<|im_start|>") != std::string::npos;
+        || out.find("<|im_start|>") != std::string::npos
+        || out.find("<|end|>") != std::string::npos;
 }
 
+/** Remove chat special tokens and think/reasoning markup from visible text. */
 static std::string strip_special(const std::string & in) {
     std::string s = in;
     const char * tags[] = {
         "<|im_end|>", "<|im_start|>", "<|endoftext|>",
-        "<|end|>", "</s>", "<s>", nullptr
+        "<|end|>", "</s>", "<s>",
+        "<|redacted_thinking|>", "</|redacted_thinking|>",
+        nullptr
     };
     for (int t = 0; tags[t]; ++t) {
         size_t pos;
         while ((pos = s.find(tags[t])) != std::string::npos) {
             s.erase(pos, std::strlen(tags[t]));
+        }
+    }
+    // Drop well-formed <think>...</think> (and variants) entirely
+    const char * opens[] = { "<think>", "<thinking>", "<reasoning>", "<thought>", nullptr };
+    const char * closes[] = { "</think>", "</thinking>", "</reasoning>", "</thought>", nullptr };
+    for (int t = 0; opens[t]; ++t) {
+        for (;;) {
+            size_t a = s.find(opens[t]);
+            if (a == std::string::npos) break;
+            size_t b = s.find(closes[t], a + std::strlen(opens[t]));
+            if (b == std::string::npos) {
+                // unclosed: drop open tag only, keep rest (may still be streaming answer after)
+                s.erase(a, std::strlen(opens[t]));
+                break;
+            }
+            s.erase(a, (b + std::strlen(closes[t])) - a);
+        }
+    }
+    // orphan close tags
+    for (int t = 0; closes[t]; ++t) {
+        size_t pos;
+        while ((pos = s.find(closes[t])) != std::string::npos) {
+            s.erase(pos, std::strlen(closes[t]));
         }
     }
     return trim_copy(s);
@@ -534,17 +560,31 @@ static std::string generate_loop(
 
     llama_sampler_free(smpl);
 
+    const size_t raw_len = out.size();
     out = strip_special(out);
     out = collapse_repeats(out);
+    ALOGI("gen done raw_len=%zu clean_len=%zu stopped_loop=%d preview=%.80s",
+          raw_len, out.size(), stopped_loop ? 1 : 0, out.c_str());
     if (stopped_loop) {
         ALOGI("final after loop-collapse len=%zu", out.size());
     }
 
-    // Final stream push with cleaned text (engine accumulates pieces — but we now send full view each time)
-    if (callback && onToken && !out.empty()) {
+    // Always push final frame (even empty) so Kotlin can detect finished stream
+    if (callback && onToken) {
         jstring js = env->NewStringUTF(out.c_str());
         env->CallVoidMethod(callback, onToken, js);
         env->DeleteLocalRef(js);
+    }
+
+    if (out.empty() && raw_len > 0) {
+        ALOGW("all tokens stripped (likely think-only). raw_len=%zu", raw_len);
+        // Fallback: return a short note so UI is not a blank bubble
+        out = "(модель ответила только блоком мышления — попробуй /no_think в system prompt или max tokens ≥ 64)";
+        if (callback && onToken) {
+            jstring js = env->NewStringUTF(out.c_str());
+            env->CallVoidMethod(callback, onToken, js);
+            env->DeleteLocalRef(js);
+        }
     }
 
     return out;
