@@ -1,0 +1,3 @@
+# Do not LFS-corrupt future native libs unless intentional
+*.so binary
+*.gguf binary
