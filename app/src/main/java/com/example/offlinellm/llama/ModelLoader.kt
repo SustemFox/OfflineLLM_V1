@@ -51,22 +51,80 @@ object ModelLoader {
     }
 
     fun getRecommendedModels(): List<GgufModelInfo> = listOf(
+        // —— Qwen3.5 (актуальная линейка, телефон: 0.8B / 4B) ——
         GgufModelInfo(
-            id = "qwen2.5-0.5b-instruct-q4_k_m",
-            name = "Qwen 2.5 0.5B Instruct (Q4_K_M) — лёгкая",
+            id = "qwen3.5-0.8b-q4_k_m",
+            name = "Qwen 3.5 0.8B (Q4_K_M) — лёгкая ★",
             filePath = "",
-            fileSizeBytes = 400_000_000L,
-            downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
-            parameterCount = "0.5B",
+            fileSizeBytes = 532_517_120L,
+            downloadUrl = "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf",
+            parameterCount = "0.8B",
             quantType = "Q4_K_M"
         ),
         GgufModelInfo(
-            id = "qwen2.5-1.5b-instruct-q4_0",
-            name = "Qwen 2.5 1.5B Instruct (Q4_0)",
+            id = "qwen3.5-4b-q4_k_m",
+            name = "Qwen 3.5 4B (Q4_K_M) — баланс",
             filePath = "",
-            fileSizeBytes = 930_000_000L,
-            downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_0.gguf",
-            parameterCount = "1.5B"
+            fileSizeBytes = 2_740_937_888L,
+            downloadUrl = "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf",
+            parameterCount = "4B",
+            quantType = "Q4_K_M"
+        ),
+        GgufModelInfo(
+            id = "qwen3.5-4b-q4_0",
+            name = "Qwen 3.5 4B (Q4_0) — чуть легче 4B",
+            filePath = "",
+            fileSizeBytes = 2_583_221_408L,
+            downloadUrl = "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_0.gguf",
+            parameterCount = "4B",
+            quantType = "Q4_0"
+        ),
+        // —— Qwen3 (предыдущее поколение, стабильные GGUF) ——
+        GgufModelInfo(
+            id = "qwen3-0.6b-q4_k_m",
+            name = "Qwen 3 0.6B (Q4_K_M) — очень лёгкая",
+            filePath = "",
+            fileSizeBytes = 396_705_472L,
+            downloadUrl = "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf",
+            parameterCount = "0.6B",
+            quantType = "Q4_K_M"
+        ),
+        GgufModelInfo(
+            id = "qwen3-1.7b-q4_k_m",
+            name = "Qwen 3 1.7B (Q4_K_M) — рекомендуется OP7",
+            filePath = "",
+            fileSizeBytes = 1_107_409_472L,
+            downloadUrl = "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf",
+            parameterCount = "1.7B",
+            quantType = "Q4_K_M"
+        ),
+        GgufModelInfo(
+            id = "qwen3-4b-q4_k_m",
+            name = "Qwen 3 4B (Q4_K_M)",
+            filePath = "",
+            fileSizeBytes = 2_497_280_256L,
+            downloadUrl = "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf",
+            parameterCount = "4B",
+            quantType = "Q4_K_M"
+        ),
+        GgufModelInfo(
+            id = "qwen3-8b-q4_k_m",
+            name = "Qwen 3 8B (Q4_K_M) — тяжёлая (~5 GB)",
+            filePath = "",
+            fileSizeBytes = 5_027_783_488L,
+            downloadUrl = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf",
+            parameterCount = "8B",
+            quantType = "Q4_K_M"
+        ),
+        // —— запас: Qwen2.5 (если 3.x не взлетит на старом GGUF) ——
+        GgufModelInfo(
+            id = "qwen2.5-1.5b-instruct-q4_k_m",
+            name = "Qwen 2.5 1.5B Instruct (Q4_K_M) — fallback",
+            filePath = "",
+            fileSizeBytes = 986_000_000L,
+            downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+            parameterCount = "1.5B",
+            quantType = "Q4_K_M"
         ),
         GgufModelInfo(
             id = "llama-3.2-1b-instruct-q4_k_m",
@@ -76,23 +134,6 @@ object ModelLoader {
             downloadUrl = "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
             parameterCount = "1B",
             quantType = "Q4_K_M"
-        ),
-        GgufModelInfo(
-            id = "llama-3.2-3b-instruct-q4_k_m",
-            name = "Llama 3.2 3B Instruct (Q4_K_M)",
-            filePath = "",
-            fileSizeBytes = 1_760_000_000L,
-            downloadUrl = "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
-            parameterCount = "3B",
-            quantType = "Q4_K_M"
-        ),
-        GgufModelInfo(
-            id = "qwen2.5-7b-instruct-q4_0",
-            name = "Qwen 2.5 7B Instruct (Q4_0)",
-            filePath = "",
-            fileSizeBytes = 4_070_000_000L,
-            downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_0.gguf",
-            parameterCount = "7B"
         ),
     )
 
