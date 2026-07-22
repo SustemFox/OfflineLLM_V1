@@ -283,23 +283,48 @@ object ModelsDirectoryManager {
             AppLogger.d("Storage", "cache hit $fileName ($docLen)")
             return out
         }
-        AppLogger.d("Storage", "materialize $fileName ($docLen bytes) → ${out.absolutePath}")
+        // Caller must be on a background thread — this can take minutes for multi‑hundred MB GGUF.
+        val t0 = System.currentTimeMillis()
+        AppLogger.d(
+            "Storage",
+            "materialize START $fileName ($docLen bytes) → ${out.absolutePath} " +
+                "thread=${Thread.currentThread().name}"
+        )
         return try {
+            val tmp = File(cacheDir, "$fileName.materialize")
+            try { tmp.delete() } catch (_: Throwable) {}
             openSafInput(context, fileName)?.use { input ->
-                FileOutputStream(out).use { output ->
+                FileOutputStream(tmp).use { output ->
                     val buf = ByteArray(1024 * 1024)
+                    var copied = 0L
+                    var lastLog = 0L
                     while (true) {
                         val n = input.read(buf)
                         if (n <= 0) break
                         output.write(buf, 0, n)
+                        copied += n
+                        val now = System.currentTimeMillis()
+                        if (now - lastLog > 2000L && docLen > 0L) {
+                            val pct = (copied * 100 / docLen).toInt()
+                            AppLogger.d("Storage", "materialize $pct% ($copied / $docLen)")
+                            lastLog = now
+                        }
                     }
                     output.flush()
                 }
+            } ?: return null
+            if (out.exists()) out.delete()
+            if (!tmp.renameTo(out)) {
+                tmp.copyTo(out, overwrite = true)
+                tmp.delete()
             }
+            val dt = System.currentTimeMillis() - t0
+            AppLogger.d("Storage", "materialize DONE $fileName in ${dt}ms size=${out.length()}")
             if (out.isFile && out.length() > 0L) out else null
         } catch (t: Throwable) {
             AppLogger.e("Storage", "materialize failed: ${t.message}", t)
             try { out.delete() } catch (_: Throwable) {}
+            try { File(cacheDir, "$fileName.materialize").delete() } catch (_: Throwable) {}
             null
         }
     }
