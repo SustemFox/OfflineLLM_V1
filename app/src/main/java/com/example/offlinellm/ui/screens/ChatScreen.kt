@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.offlinellm.domain.model.DownloadState
+import com.example.offlinellm.ui.chat.ChatUiState
 import com.example.offlinellm.ui.chat.ChatViewModel
 import com.example.offlinellm.ui.chat.TypingIndicator
 import com.example.offlinellm.ui.components.MessageItem
@@ -39,7 +40,7 @@ import com.example.offlinellm.ui.components.MessageItem
 @Composable
 fun ChatScreen(
     viewModel: ChatViewModel,
-    state: ChatViewModel.ChatUiState,
+    state: ChatUiState,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
