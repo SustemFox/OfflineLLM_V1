@@ -6,8 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
 
-# Latest stable-ish release pin of ggml-org/llama.cpp (CPU-only for this APK)
 set(OFFLINELLM_LLAMA_TAG "b10079" CACHE STRING "llama.cpp git tag/branch")
+option(OFFLINELLM_ENABLE_OPENCL "Build llama.cpp with GGML_OPENCL" ON)
 
 set(LLAMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp)
 if (EXISTS "${LLAMA_DIR}/CMakeLists.txt")
@@ -37,12 +37,34 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
-set(GGML_OPENCL OFF CACHE BOOL "" FORCE)
 set(GGML_HEXAGON OFF CACHE BOOL "" FORCE)
 set(GGML_BLAS OFF CACHE BOOL "" FORCE)
 set(GGML_CUDA OFF CACHE BOOL "" FORCE)
 set(GGML_LLAMAFILE OFF CACHE BOOL "" FORCE)
 set(GGML_CCACHE OFF CACHE BOOL "" FORCE)
+
+set(OFFLINELLM_OPENCL_BUILT 0)
+set(OPENCL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/opencl")
+set(OPENCL_ICD_LIB "${OPENCL_ROOT}/lib/libOpenCL.so")
+set(OPENCL_INC_DIR "${OPENCL_ROOT}/include")
+
+if (OFFLINELLM_ENABLE_OPENCL)
+    if (EXISTS "${OPENCL_ICD_LIB}" AND EXISTS "${OPENCL_INC_DIR}/CL/cl.h")
+        message(STATUS "OpenCL deps found — enabling GGML_OPENCL")
+        set(OpenCL_INCLUDE_DIR "${OPENCL_INC_DIR}" CACHE PATH "" FORCE)
+        set(OpenCL_LIBRARY "${OPENCL_ICD_LIB}" CACHE FILEPATH "" FORCE)
+        set(OpenCL_FOUND TRUE CACHE BOOL "" FORCE)
+        set(GGML_OPENCL ON CACHE BOOL "" FORCE)
+        set(GGML_OPENCL_EMBED_KERNELS ON CACHE BOOL "" FORCE)
+        set(GGML_OPENCL_USE_ADRENO_KERNELS ON CACHE BOOL "" FORCE)
+        set(OFFLINELLM_OPENCL_BUILT 1)
+    else()
+        message(WARNING "OpenCL deps missing at ${OPENCL_ROOT} — building CPU-only")
+        set(GGML_OPENCL OFF CACHE BOOL "" FORCE)
+    endif()
+else()
+    set(GGML_OPENCL OFF CACHE BOOL "" FORCE)
+endif()
 
 add_subdirectory(${LLAMA_SRC} llama_build EXCLUDE_FROM_ALL)
 
@@ -59,7 +81,15 @@ else()
     message(FATAL_ERROR "llama CMake target not found")
 endif()
 
+if (OFFLINELLM_OPENCL_BUILT)
+    target_include_directories(offlinellm_jni PRIVATE ${OPENCL_INC_DIR})
+    target_link_libraries(offlinellm_jni ${OPENCL_ICD_LIB})
+    target_link_options(offlinellm_jni PRIVATE "-Wl,--no-as-needed")
+endif()
+
 target_compile_options(offlinellm_jni PRIVATE -O3 -fvisibility=hidden)
 
-# Surface pin in backend string via compile definition
-target_compile_definitions(offlinellm_jni PRIVATE OFFLINELLM_LLAMA_TAG="${OFFLINELLM_LLAMA_TAG}")
+target_compile_definitions(offlinellm_jni PRIVATE
+    OFFLINELLM_LLAMA_TAG="${OFFLINELLM_LLAMA_TAG}"
+    OFFLINELLM_OPENCL_BUILT=${OFFLINELLM_OPENCL_BUILT}
+)
