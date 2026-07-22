@@ -34,6 +34,10 @@ class LocalLlmRepository(
     val backendInfo: String
         get() = engine.activeBackend
 
+    suspend fun ensureReady() {
+        loadEngine()
+    }
+
     fun applySamplingFromPrefs() {
         engine.updateSampling(
             maxTokens = AppPreferences.getMaxTokens(context),
