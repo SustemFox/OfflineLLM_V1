@@ -101,14 +101,38 @@ object ResponseParser {
             else -> answer
         }
 
+        val cleanedAnswer = collapseRepeatedParagraphs(finalAnswer)
         return Parts(
             thinking = if (showThinking) thinkingJoined else null,
-            answer = finalAnswer,
+            answer = cleanedAnswer,
             thinkingComplete = thinkingComplete
         )
     }
 
+    
+    /** Remove consecutive / alternating duplicate paragraphs from visible answer. */
+    fun collapseRepeatedParagraphs(text: String): String {
+        if (text.length < 40) return text
+        val paras = text
+            .split(Regex("\\n\\s*\\n"))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        if (paras.size <= 1) return text.trim()
+
+        val out = ArrayList<String>()
+        for (p in paras) {
+            if (out.isNotEmpty() && out.last() == p) continue
+            if (out.size >= 2 && out[out.size - 2] == p) continue
+            out.add(p)
+        }
+        // A B A B → A B
+        if (out.size >= 4 && out[0] == out[2] && out[1] == out[3]) {
+            return listOf(out[0], out[1]).joinToString("\n\n")
+        }
+        return out.joinToString("\n\n")
+    }
+
     /** Hard cleanup for display of already-stored messages (history). */
     fun stripThinkTags(text: String): String =
-        ANY_TAG_RE.replace(PAIR_RE.replace(text, ""), "").trim()
+        collapseRepeatedParagraphs(ANY_TAG_RE.replace(PAIR_RE.replace(text, ""), "").trim())
 }
