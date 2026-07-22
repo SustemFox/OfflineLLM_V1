@@ -257,10 +257,35 @@ class ChatViewModel(
         genJob?.cancel()
         genJob = viewModelScope.launch(Dispatchers.IO) {
             var assistantMessage: Message? = null
+            var lastUiMs = 0L
+            var pendingRaw: String? = null
             try {
                 withContext(Dispatchers.Main) {
                     updateState { copy(isGenerating = true) }
                 }
+
+                suspend fun flushUi(raw: String, force: Boolean) {
+                    val now = System.currentTimeMillis()
+                    if (!force && now - lastUiMs < UI_STREAM_MIN_MS) {
+                        pendingRaw = raw
+                        return
+                    }
+                    lastUiMs = now
+                    pendingRaw = null
+                    // Parse off main, only state write on Main
+                    val base = assistantMessage ?: Message(text = "", sender = Message.Sender.LLM)
+                    val parsed = applyParsedToMessage(raw, base)
+                    withContext(Dispatchers.Main) {
+                        if (assistantMessage == null) {
+                            assistantMessage = parsed
+                            addMessage(parsed, persist = false)
+                        } else {
+                            assistantMessage = parsed
+                            updateLastMessage(parsed, persist = false)
+                        }
+                    }
+                }
+
                 AppProvider.llmRepository.generateResponse(prompt)
                     .catch { error ->
                         withContext(Dispatchers.Main) {
@@ -274,18 +299,10 @@ class ChatViewModel(
                         }
                     }
                     .collect { partial ->
-                        withContext(Dispatchers.Main) {
-                            if (assistantMessage == null) {
-                                val base = Message(text = "", sender = Message.Sender.LLM)
-                                assistantMessage = applyParsedToMessage(partial, base)
-                                addMessage(assistantMessage!!)
-                            } else {
-                                assistantMessage =
-                                    applyParsedToMessage(partial, assistantMessage!!)
-                                updateLastMessage(assistantMessage!!)
-                            }
-                        }
+                        flushUi(partial, force = false)
                     }
+                // final frame
+                pendingRaw?.let { flushUi(it, force = true) }
             } catch (t: Throwable) {
                 AppLogger.e("ChatVM", "streamAssistantResponse failed: ${t.message}", t)
                 withContext(Dispatchers.Main) {
@@ -305,6 +322,11 @@ class ChatViewModel(
                 }
             }
         }
+    }
+
+    companion object {
+        /** Min interval between chat bubble redraws while streaming (avoids Main ANR). */
+        private const val UI_STREAM_MIN_MS = 80L
     }
 
     fun toggleThinking(messageId: String) {
@@ -520,16 +542,25 @@ class ChatViewModel(
             systemMsg("Модель «${model.name}» ещё не скачана.")
             return
         }
-        val path = try {
-            AppProvider.modelRepository.getModelPath(model.id)
-        } catch (_: Throwable) {
-            null
+        // getModelPath may materialize ~500MB from SAF → must NOT run on main (ANR)
+        viewModelScope.launch {
+            updateState { copy(isLoading = true) }
+            systemMsg("Подготовка файла модели (кэш)…")
+            val path = try {
+                withContext(Dispatchers.IO) {
+                    AppProvider.modelRepository.getModelPath(model.id)
+                }
+            } catch (t: Throwable) {
+                AppLogger.e("ChatVM", "getModelPath: ${t.message}", t)
+                null
+            }
+            if (path.isNullOrBlank()) {
+                updateState { copy(isLoading = false) }
+                systemMsg("Файл модели не найден.")
+                return@launch
+            }
+            switchToRealEngine(path)
         }
-        if (path.isNullOrBlank()) {
-            systemMsg("Файл модели не найден.")
-            return
-        }
-        switchToRealEngine(path)
     }
 
     fun downloadModel(model: LlmModel) {
@@ -626,18 +657,18 @@ class ChatViewModel(
         scheduleSaveHistory()
     }
 
-    private fun addMessage(message: Message) {
+    private fun addMessage(message: Message, persist: Boolean = true) {
         updateState { copy(messages = messages + message) }
-        scheduleSaveHistory()
+        if (persist) scheduleSaveHistory()
     }
 
-    private fun updateLastMessage(message: Message) {
+    private fun updateLastMessage(message: Message, persist: Boolean = true) {
         val messages = _uiState.value.messages.toMutableList()
         if (messages.isNotEmpty()) {
             messages[messages.lastIndex] = message
             updateState { copy(messages = messages) }
         }
-        scheduleSaveHistory()
+        if (persist) scheduleSaveHistory()
     }
 
     private fun scheduleSaveHistory() {
