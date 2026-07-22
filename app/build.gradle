@@ -12,8 +12,8 @@ android {
         applicationId 'com.example.offlinellm'
         minSdk 26
         targetSdk 34
-        versionCode 6
-        versionName '1.4.1-settings-tabs'
+        versionCode 7
+        versionName '1.5.0-opencl-exp'
 
         ndk {
             abiFilters 'arm64-v8a'
@@ -24,7 +24,8 @@ android {
                 cppFlags '-std=c++17 -O3 -fvisibility=hidden'
                 arguments '-DANDROID_STL=c++_shared',
                           '-DGGML_NATIVE=OFF',
-                          '-DOFFLINELLM_LLAMA_TAG=b10079'
+                          '-DOFFLINELLM_LLAMA_TAG=b10079',
+                          '-DOFFLINELLM_ENABLE_OPENCL=ON'
             }
         }
     }
@@ -95,7 +96,6 @@ android {
         jniLibs {
             useLegacyPackaging true
             excludes += '**/libggml-vulkan.so'
-            excludes += '**/libggml-opencl.so'
             excludes += '**/libmtmd.so'
             excludes += '**/libllama-common.so'
         }
@@ -110,20 +110,122 @@ android {
     ndkVersion '26.1.10909125'
 }
 
+def thirdParty = file('src/main/cpp/third_party')
+def openClRoot = file("${thirdParty}/opencl")
+def openClHeadersSrc = file("${thirdParty}/OpenCL-Headers")
+def openClIcdSrc = file("${thirdParty}/OpenCL-ICD-Loader")
+def jniArm64 = file('src/main/jniLibs/arm64-v8a')
+
 tasks.register('cloneLlamaCpp', Exec) {
-    def dest = file('src/main/cpp/third_party/llama.cpp')
+    def dest = file("${thirdParty}/llama.cpp")
     outputs.dir(dest)
     onlyIf { !new File(dest, 'CMakeLists.txt').exists() }
-    workingDir = file('src/main/cpp/third_party')
+    workingDir = thirdParty
     doFirst { workingDir.mkdirs() }
-    // pin tag used by CMake FetchContent as well
     commandLine 'git', 'clone', '--depth', '1', '--branch', 'b10079',
             'https://github.com/ggml-org/llama.cpp.git', 'llama.cpp'
 }
 
+tasks.register('cloneOpenClHeaders', Exec) {
+    outputs.dir(openClHeadersSrc)
+    onlyIf { !new File(openClHeadersSrc, 'CL/cl.h').exists() }
+    workingDir = thirdParty
+    doFirst { workingDir.mkdirs() }
+    commandLine 'git', 'clone', '--depth', '1',
+            'https://github.com/KhronosGroup/OpenCL-Headers.git', 'OpenCL-Headers'
+}
+
+tasks.register('cloneOpenClIcd', Exec) {
+    outputs.dir(openClIcdSrc)
+    onlyIf { !new File(openClIcdSrc, 'CMakeLists.txt').exists() }
+    workingDir = thirdParty
+    doFirst { workingDir.mkdirs() }
+    commandLine 'git', 'clone', '--depth', '1',
+            'https://github.com/KhronosGroup/OpenCL-ICD-Loader.git', 'OpenCL-ICD-Loader'
+}
+
+tasks.register('stageOpenClHeaders', Copy) {
+    dependsOn 'cloneOpenClHeaders'
+    from("${openClHeadersSrc}/CL")
+    into("${openClRoot}/include/CL")
+}
+
+tasks.register('buildOpenClIcd') {
+    dependsOn 'cloneOpenClIcd', 'stageOpenClHeaders'
+    def outLib = file("${openClRoot}/lib/libOpenCL.so")
+    outputs.file(outLib)
+    doLast {
+        def ndk = System.getenv('ANDROID_NDK_HOME') ?: System.getenv('ANDROID_NDK') ?: System.getenv('NDK_ROOT')
+        if (ndk == null || !(new File(ndk).exists())) {
+            def localProps = new File(rootProject.projectDir, 'local.properties')
+            if (localProps.exists()) {
+                localProps.eachLine { line ->
+                    if (line.startsWith('ndk.dir=')) ndk = line.substring('ndk.dir='.length()).trim()
+                    if (line.startsWith('sdk.dir=') && ndk == null) {
+                        def sdk = line.substring('sdk.dir='.length()).trim()
+                        def cand = new File(sdk, "ndk/${android.ndkVersion}")
+                        if (cand.exists()) ndk = cand.absolutePath
+                    }
+                }
+            }
+        }
+        if (ndk == null || !(new File(ndk).exists())) {
+            def sdkRoot = System.getenv('ANDROID_HOME') ?: System.getenv('ANDROID_SDK_ROOT')
+            if (sdkRoot != null) {
+                def cand = new File(sdkRoot, "ndk/${android.ndkVersion}")
+                if (cand.exists()) ndk = cand.absolutePath
+            }
+        }
+        if (ndk == null || !(new File(ndk).exists())) {
+            throw new GradleException("ANDROID_NDK_HOME / NDK not found for OpenCL ICD build")
+        }
+        def toolchain = "${ndk}/build/cmake/android.toolchain.cmake"
+        def buildDir = file("${openClIcdSrc}/build_android_arm64")
+        buildDir.mkdirs()
+        new File(openClRoot, 'lib').mkdirs()
+        new File(openClRoot, 'include').mkdirs()
+
+        exec {
+            workingDir buildDir
+            commandLine 'cmake', openClIcdSrc.absolutePath,
+                    '-G', 'Ninja',
+                    "-DCMAKE_TOOLCHAIN_FILE=${toolchain}",
+                    '-DANDROID_ABI=arm64-v8a',
+                    '-DANDROID_PLATFORM=android-26',
+                    '-DANDROID_STL=c++_shared',
+                    '-DCMAKE_BUILD_TYPE=Release',
+                    "-DOPENCL_ICD_LOADER_HEADERS_DIR=${openClRoot}/include",
+                    '-DBUILD_SHARED_LIBS=ON'
+        }
+        exec {
+            workingDir buildDir
+            commandLine 'cmake', '--build', '.', '--config', 'Release', '-j', '4'
+        }
+        def built = file("${buildDir}/libOpenCL.so")
+        if (!built.exists()) {
+            def alt = fileTree(buildDir).matching { include '**/libOpenCL.so' }.files.find { it.isFile() }
+            if (alt == null) throw new GradleException("libOpenCL.so not produced in ${buildDir}")
+            built = alt
+        }
+        copy {
+            from built
+            into "${openClRoot}/lib"
+        }
+        jniArm64.mkdirs()
+        copy {
+            from "${openClRoot}/lib/libOpenCL.so"
+            into jniArm64
+        }
+        println "Staged OpenCL ICD: ${openClRoot}/lib/libOpenCL.so and jniLibs"
+    }
+}
+
 tasks.configureEach { task ->
     if (task.name.startsWith('configureCMake') || task.name.startsWith('buildCMake') || task.name.startsWith('externalNativeBuild')) {
-        task.dependsOn('cloneLlamaCpp')
+        task.dependsOn('cloneLlamaCpp', 'buildOpenClIcd')
+    }
+    if (task.name.startsWith('mergeReleaseNativeLibs') || task.name.startsWith('mergeDebugNativeLibs')) {
+        task.dependsOn('buildOpenClIcd')
     }
 }
 
