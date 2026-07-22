@@ -23,7 +23,6 @@ android {
             cmake {
                 cppFlags '-std=c++17 -O3 -fvisibility=hidden'
                 arguments '-DANDROID_STL=c++_shared',
-                          '-DLLAMA_BUILD_COMMON=ON',
                           '-DGGML_NATIVE=OFF'
             }
         }
@@ -91,7 +90,6 @@ android {
         }
         jniLibs {
             useLegacyPackaging true
-            // Drop legacy broken prebuilts if any remain under jniLibs
             excludes += '**/libggml-vulkan.so'
             excludes += '**/libggml-opencl.so'
             excludes += '**/libmtmd.so'
@@ -101,13 +99,29 @@ android {
 
     sourceSets {
         main {
-            // Prefer CMake outputs; keep jniLibs empty/legacy-only
             jniLibs.srcDirs = ['src/main/jniLibs']
         }
     }
 
-    // NDK side-by-side
     ndkVersion '26.1.10909125'
+}
+
+// Clone llama.cpp before native build if missing (works even when workflow can't be edited)
+tasks.register('cloneLlamaCpp', Exec) {
+    def dest = file('src/main/cpp/third_party/llama.cpp')
+    outputs.dir(dest)
+    onlyIf { !new File(dest, 'CMakeLists.txt').exists() }
+    workingDir = file('src/main/cpp/third_party')
+    doFirst {
+        workingDir.mkdirs()
+    }
+    commandLine 'git', 'clone', '--depth', '1', 'https://github.com/ggml-org/llama.cpp.git', 'llama.cpp'
+}
+
+tasks.configureEach { task ->
+    if (task.name.startsWith('configureCMake') || task.name.startsWith('buildCMake') || task.name.startsWith('externalNativeBuild')) {
+        task.dependsOn('cloneLlamaCpp')
+    }
 }
 
 dependencies {
@@ -124,7 +138,6 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0'
 
-    // Ktor HTTP server
     implementation 'io.ktor:ktor-server-core:2.3.7'
     implementation 'io.ktor:ktor-server-netty:2.3.7'
     implementation 'io.ktor:ktor-server-content-negotiation:2.3.7'
