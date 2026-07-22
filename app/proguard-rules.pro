@@ -1,6 +1,8 @@
-# Keep llama.cpp native methods
+# Keep llama.cpp JNI
 -keep class com.example.offlinellm.llama.LlamaBridge { *; }
 -keepclassmembers class com.example.offlinellm.llama.LlamaBridge { *; }
+-keep class com.example.offlinellm.llama.LlamaBridge$TokenCallback { *; }
+-keepclassmembers class com.example.offlinellm.llama.LlamaBridge$TokenCallback { *; }
 
 # Keep Kotlin serialization
 -keepattributes *Annotation*, InnerClasses
@@ -8,15 +10,13 @@
 -keepclassmembers class kotlinx.serialization.json.** { *** Companion; }
 -keepclasseswithmembers class kotlinx.serialization.json.** { kotlinx.serialization.KSerializer serializer(...); }
 
-# Keep Ktor classes
+# Keep Ktor / Netty
 -keep class io.ktor.** { *; }
 -keep class org.slf4j.** { *; }
-
-# Keep coroutines
+-keep class io.netty.** { *; }
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
 
-# Netty optional dependencies (not available on Android)
 -dontwarn io.netty.internal.tcnative.**
 -dontwarn io.netty.handler.ssl.**
 -dontwarn org.conscrypt.**
@@ -26,12 +26,6 @@
 -dontwarn org.apache.logging.log4j.**
 -dontwarn org.slf4j.impl.**
 -dontwarn java.lang.management.**
-
-# Keep all Netty classes used by Ktor
--keep class io.netty.** { *; }
--keep class org.slf4j.** { *; }
-
-# Additional Netty optional deps (compression, marshalling, etc.)
 -dontwarn com.jcraft.jzlib.**
 -dontwarn com.ning.compress.**
 -dontwarn com.oracle.svm.core.annotate.**
@@ -40,14 +34,10 @@
 -dontwarn org.jboss.marshalling.**
 -dontwarn com.google.protobuf.**
 -dontwarn com.google.common.**
-
-# Netty has too many optional deps — ignore all missing classes
 -dontwarn com.aayushatharva.brotli4j.**
 -dontwarn com.github.luben.zstd.**
 -dontwarn com.google.errorprone.**
 -dontwarn org.bouncycastle.**
 -dontwarn com.aayushatharva.**
 -dontwarn io.netty.internal.**
-
-# Just build the APK — all missing classes are optional Netty features
 -ignorewarnings
