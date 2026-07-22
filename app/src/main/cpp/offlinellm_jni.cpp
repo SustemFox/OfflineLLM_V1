@@ -7,6 +7,7 @@
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "llama.h"
@@ -129,7 +130,48 @@ static std::string token_to_piece_str(const llama_vocab * vocab, llama_token tok
     return std::string(buf, buf + n);
 }
 
-static llama_token sample_temp(const float * logits, int n_vocab, float temperature, float top_p) {
+// Apply penalties to logits using generated token history
+static void apply_penalties(
+        float * logits,
+        int n_vocab,
+        const std::vector<llama_token> & gen,
+        float repeat_penalty,
+        float frequency_penalty) {
+    if (gen.empty()) return;
+    if (repeat_penalty <= 1.001f && frequency_penalty <= 0.001f) return;
+
+    std::unordered_map<int, int> counts;
+    // last 128 tokens window
+    const size_t start = gen.size() > 128 ? gen.size() - 128 : 0;
+    for (size_t i = start; i < gen.size(); ++i) {
+        counts[(int)gen[i]]++;
+    }
+    for (const auto & kv : counts) {
+        int id = kv.first;
+        if (id < 0 || id >= n_vocab) continue;
+        float & l = logits[id];
+        if (repeat_penalty > 1.0f) {
+            // classic llama.cpp-style: divide if positive, multiply if negative
+            if (l > 0) l /= repeat_penalty;
+            else l *= repeat_penalty;
+        }
+        if (frequency_penalty > 0.f) {
+            l -= frequency_penalty * (float)kv.second;
+        }
+    }
+}
+
+static llama_token sample_temp(
+        float * logits,
+        int n_vocab,
+        float temperature,
+        float top_p,
+        const std::vector<llama_token> & gen,
+        float repeat_penalty,
+        float frequency_penalty) {
+
+    apply_penalties(logits, n_vocab, gen, repeat_penalty, frequency_penalty);
+
     if (temperature <= 0.01f) {
         int best = 0;
         float best_v = logits[0];
@@ -158,6 +200,14 @@ static llama_token sample_temp(const float * logits, int n_vocab, float temperat
     std::sort(probs.begin(), probs.end(), [](const auto & a, const auto & b) {
         return a.first > b.first;
     });
+    // top-k soft cap to reduce degenerate tails
+    const size_t top_k = 40;
+    if (probs.size() > top_k) probs.resize(top_k);
+    {
+        float s2 = 0.f;
+        for (auto & pr : probs) s2 += pr.first;
+        for (auto & pr : probs) pr.first /= s2;
+    }
     if (top_p < 1.0f && top_p > 0.0f) {
         float cum = 0.f;
         size_t cut = 0;
@@ -179,6 +229,55 @@ static llama_token sample_temp(const float * logits, int n_vocab, float temperat
     return (llama_token)probs.back().second;
 }
 
+// Detect pathological loops: same token N times, or short cycle in last tokens
+static bool is_degenerate(const std::vector<llama_token> & gen) {
+    if (gen.size() < 8) return false;
+    // same last token repeated 12+ times
+    {
+        llama_token last = gen.back();
+        int c = 0;
+        for (int i = (int)gen.size() - 1; i >= 0 && c < 20; --i) {
+            if (gen[(size_t)i] == last) c++;
+            else break;
+        }
+        if (c >= 12) return true;
+    }
+    // cycle length 1..12 that repeats 4 times
+    for (int cycle = 1; cycle <= 12; ++cycle) {
+        if ((int)gen.size() < cycle * 4) continue;
+        bool ok = true;
+        for (int r = 0; r < 4 && ok; ++r) {
+            for (int j = 0; j < cycle; ++j) {
+                size_t a = gen.size() - 1 - (size_t)j - (size_t)r * (size_t)cycle;
+                size_t b = gen.size() - 1 - (size_t)j;
+                if (gen[a] != gen[b]) { ok = false; break; }
+            }
+        }
+        if (ok) return true;
+    }
+    return false;
+}
+
+static bool text_has_phrase_loop(const std::string & out) {
+    if (out.size() < 80) return false;
+    // if last 40 chars appear twice in last 200 chars
+    const size_t n = out.size();
+    const size_t win = std::min<size_t>(60, n / 3);
+    if (win < 20) return false;
+    std::string tail = out.substr(n - win);
+    std::string body = out.substr(n > 240 ? n - 240 : 0, n - win - (n > 240 ? n - 240 : 0) + (n > 240 ? 240 - win : n - win));
+    // simpler: count occurrences of tail in last 300
+    std::string region = out.substr(n > 300 ? n - 300 : 0);
+    size_t pos = 0;
+    int hits = 0;
+    while ((pos = region.find(tail, pos)) != std::string::npos) {
+        hits++;
+        pos += win / 2;
+        if (hits >= 3) return true;
+    }
+    return false;
+}
+
 static std::string generate_loop(
         ContextHandle * handle,
         const std::string & user,
@@ -186,6 +285,8 @@ static std::string generate_loop(
         int max_tokens,
         float temperature,
         float top_p,
+        float repeat_penalty,
+        float frequency_penalty,
         JNIEnv * env,
         jobject callback) {
     std::lock_guard<std::mutex> lock(handle->mu);
@@ -230,7 +331,6 @@ static std::string generate_loop(
         return "ERROR: prompt too long for n_ctx";
     }
 
-    // Evaluate prompt token-by-token (batch_get_one is 2-arg on b5250)
     for (int i = 0; i < n_tok; ++i) {
         llama_batch batch = llama_batch_get_one(&tokens[(size_t)i], 1);
         if (llama_decode(handle->ctx, batch) != 0) {
@@ -246,12 +346,16 @@ static std::string generate_loop(
     }
 
     std::string out;
+    std::vector<llama_token> gen;
     const int max_new = max_tokens > 0 ? max_tokens : 128;
     int n_cur = n_tok;
     const int n_vocab = llama_vocab_n_tokens(vocab);
     if (n_vocab <= 0) {
         return "ERROR: n_vocab";
     }
+
+    // copy logits buffer (penalties mutate)
+    std::vector<float> logits_buf;
 
     for (int step = 0; step < max_new; ++step) {
         if (n_cur >= n_ctx - 2) break;
@@ -261,15 +365,30 @@ static std::string generate_loop(
             ALOGE("no logits");
             break;
         }
+        logits_buf.assign(logits, logits + n_vocab);
 
-        llama_token id = sample_temp(logits, n_vocab, temperature, top_p);
+        llama_token id = sample_temp(
+            logits_buf.data(), n_vocab, temperature, top_p, gen,
+            repeat_penalty, frequency_penalty);
+
         if (llama_vocab_is_eog(vocab, id)) {
+            break;
+        }
+
+        gen.push_back(id);
+        if (is_degenerate(gen)) {
+            ALOGI("stop: degenerate token loop at step %d", step);
             break;
         }
 
         std::string piece = token_to_piece_str(vocab, id);
         if (!piece.empty()) {
             out += piece;
+            if (text_has_phrase_loop(out)) {
+                ALOGI("stop: phrase loop");
+                // trim last repeated chunk softly
+                break;
+            }
             if (callback && onToken) {
                 jstring js = env->NewStringUTF(piece.c_str());
                 env->CallVoidMethod(callback, onToken, js);
@@ -291,7 +410,8 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_example_offlinellm_llama_LlamaBridge_runInference(
         JNIEnv * env, jclass,
         jlong ptr, jstring jprompt, jstring jsystem,
-        jint maxTokens, jfloat temperature, jfloat topP) {
+        jint maxTokens, jfloat temperature, jfloat topP,
+        jfloat repeatPenalty, jfloat frequencyPenalty) {
     if (!ptr) return env->NewStringUTF("ERROR: null context");
     auto * handle = reinterpret_cast<ContextHandle *>(ptr);
     std::string out = generate_loop(
@@ -301,6 +421,8 @@ Java_com_example_offlinellm_llama_LlamaBridge_runInference(
         (int)maxTokens,
         (float)temperature,
         (float)topP,
+        (float)repeatPenalty,
+        (float)frequencyPenalty,
         env,
         nullptr
     );
@@ -312,6 +434,7 @@ Java_com_example_offlinellm_llama_LlamaBridge_runInferenceStream(
         JNIEnv * env, jclass,
         jlong ptr, jstring jprompt, jstring jsystem,
         jint maxTokens, jfloat temperature, jfloat topP,
+        jfloat repeatPenalty, jfloat frequencyPenalty,
         jobject callback) {
     if (!ptr) return;
     auto * handle = reinterpret_cast<ContextHandle *>(ptr);
@@ -322,6 +445,8 @@ Java_com_example_offlinellm_llama_LlamaBridge_runInferenceStream(
         (int)maxTokens,
         (float)temperature,
         (float)topP,
+        (float)repeatPenalty,
+        (float)frequencyPenalty,
         env,
         callback
     );
