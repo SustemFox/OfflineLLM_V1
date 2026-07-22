@@ -39,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -58,6 +59,7 @@ import com.example.offlinellm.domain.model.DownloadState
 import com.example.offlinellm.domain.model.LlmModel
 import com.example.offlinellm.ui.chat.ChatViewModel
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,12 +82,22 @@ fun SettingsScreen(
     onDownloadHfUrl: () -> Unit = {},
     onClearChat: () -> Unit = {},
     onAccelPref: (String) -> Unit = {},
+    onServerPortInput: (String) -> Unit = {},
+    onApplyServerPort: () -> Unit = {},
+    onRefreshIps: () -> Unit = {},
+    onTemperature: (Float) -> Unit = {},
+    onTopP: (Float) -> Unit = {},
+    onMaxTokens: (Int) -> Unit = {},
+    onNCtx: (Int) -> Unit = {},
+    onThreads: (Int) -> Unit = {},
+    onSystemPrompt: (String) -> Unit = {},
+    onShowThinking: (Boolean) -> Unit = {},
+    onRepeatPenalty: (Float) -> Unit = {},
+    onFrequencyPenalty: (Float) -> Unit = {},
 ) {
     val folderPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
-    ) { uri ->
-        if (uri != null) onSetStoragePath(uri.toString())
-    }
+    ) { uri -> if (uri != null) onSetStoragePath(uri.toString()) }
 
     Scaffold(
         topBar = {
@@ -111,39 +123,151 @@ fun SettingsScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item(key = "title_spacer") { Spacer(modifier = Modifier.height(4.dp)) }
+            item { Spacer(Modifier.height(4.dp)) }
 
             item(key = "http_server") {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("HTTP Сервер (хостинг)", style = MaterialTheme.typography.titleMedium)
-                        Spacer(modifier = Modifier.height(8.dp))
+                    Column(Modifier.padding(16.dp)) {
+                        Text("HTTP Сервер", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(8.dp))
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column(Modifier.weight(1f)) {
                                 Text(
-                                    text = if (state.isServerRunning) "Сервер запущен" else "Сервер остановлен",
+                                    if (state.isServerRunning) "Сервер запущен" else "Сервер остановлен",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = if (state.isServerRunning) MaterialTheme.colorScheme.primary
                                     else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    text = if (state.isServerRunning)
-                                        "http://<телефон>:${state.serverPort ?: 8080}/v1"
-                                    else
-                                        "OpenAI-compatible API для Kai / curl",
+                                    "OpenAI-compatible /v1 для Kai / curl",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             Switch(checked = state.isServerRunning, onCheckedChange = onToggleServer)
                         }
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = state.serverPortInput,
+                                onValueChange = onServerPortInput,
+                                label = { Text("Порт") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true
+                            )
+                            Button(onClick = onApplyServerPort) { Text("OK") }
+                            IconButton(onClick = onRefreshIps) {
+                                Icon(Icons.Default.Refresh, contentDescription = "IP")
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        if (state.isServerRunning && state.serverBaseUrls.isNotEmpty()) {
+                            Text("Готовые URL:", style = MaterialTheme.typography.labelMedium)
+                            SelectionContainer {
+                                Text(
+                                    state.serverBaseUrls.joinToString("\n"),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        } else {
+                            val ips = state.localIps
+                            Text(
+                                if (ips.isEmpty()) "IP: не найден (включи Wi‑Fi)"
+                                else "IP устройства: ${ips.joinToString(", ")}\nПосле старта: http://<IP>:${state.serverPort}/v1",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            item(key = "llm") {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Настройки LLM", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Сэмплинг применяется сразу; n_ctx/потоки — после «Выбрать» модели.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text("Temperature: ${"%.2f".format(state.temperature)}")
+                        Slider(
+                            value = state.temperature,
+                            onValueChange = onTemperature,
+                            valueRange = 0.05f..1.5f
+                        )
+                        Text("Top-p: ${"%.2f".format(state.topP)}")
+                        Slider(value = state.topP, onValueChange = onTopP, valueRange = 0.1f..1f)
+                        Text("Max tokens: ${state.maxTokens}")
+                        Slider(
+                            value = state.maxTokens.toFloat(),
+                            onValueChange = { onMaxTokens(it.roundToInt()) },
+                            valueRange = 32f..1024f,
+                            steps = 30
+                        )
+                        Text("Repeat penalty: ${"%.2f".format(state.repeatPenalty)}")
+                        Slider(
+                            value = state.repeatPenalty,
+                            onValueChange = onRepeatPenalty,
+                            valueRange = 1.0f..1.5f
+                        )
+                        Text("Frequency penalty: ${"%.2f".format(state.frequencyPenalty)}")
+                        Slider(
+                            value = state.frequencyPenalty,
+                            onValueChange = onFrequencyPenalty,
+                            valueRange = 0f..0.5f
+                        )
+                        Text("n_ctx: ${state.nCtx}")
+                        Slider(
+                            value = state.nCtx.toFloat(),
+                            onValueChange = { onNCtx((it / 256f).roundToInt() * 256) },
+                            valueRange = 512f..4096f,
+                            steps = 13
+                        )
+                        Text("Потоки CPU: ${state.threads}")
+                        Slider(
+                            value = state.threads.toFloat(),
+                            onValueChange = { onThreads(it.roundToInt()) },
+                            valueRange = 1f..8f,
+                            steps = 6
+                        )
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Блок мышления", style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "Показывать <think>…</think> в чате",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(checked = state.showThinking, onCheckedChange = onShowThinking)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = state.systemPrompt,
+                            onValueChange = onSystemPrompt,
+                            label = { Text("System prompt") },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
+                            maxLines = 8
+                        )
                     }
                 }
             }
@@ -153,46 +277,24 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(text = "Бэкенд / ускорители", style = MaterialTheme.typography.titleMedium)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Активно: ${state.activeBackend.ifBlank { "—" }}", style = MaterialTheme.typography.bodyMedium)
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Бэкенд", style = MaterialTheme.typography.titleMedium)
+                        Text("Активно: ${state.activeBackend}")
+                        Text("Модель: ${state.selectedModel?.name ?: "—"}", style = MaterialTheme.typography.bodySmall)
                         Text(
-                            "Модель: ${state.selectedModel?.name ?: "не выбрана"}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = when {
-                                state.isLoading -> "Статус: загрузка модели…"
-                                state.isRealEngine -> "Статус: llama.cpp (real)"
-                                else -> "Статус: demo / fake"
+                            when {
+                                state.isLoading -> "Статус: загрузка…"
+                                state.isRealEngine -> "Статус: llama.cpp"
+                                else -> "Статус: demo"
                             },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = MaterialTheme.typography.bodySmall
                         )
-                        Text(
-                            text = if (state.isNativeAvailable) "Native libs: OK" else "Native libs: недоступны",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (state.isNativeAvailable) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.error
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Предпочтение:", style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf("auto" to "Auto", "cpu" to "CPU", "vulkan" to "Vulkan").forEach { (id, label) ->
-                                FilterChip(
-                                    selected = state.accelPref == id,
-                                    onClick = { onAccelPref(id) },
-                                    label = { Text(label) }
-                                )
+                                FilterChip(selected = state.accelPref == id, onClick = { onAccelPref(id) }, label = { Text(label) })
                             }
                         }
-                        Text(
-                            "Vulkan сработает только если backend собран в APK; иначе CPU.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
             }
@@ -203,18 +305,11 @@ fun SettingsScreen(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        Modifier.fillMaxWidth().padding(16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Тема", style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                text = if (state.isDarkMode) "Тёмная (сохраняется)" else "Светлая (сохраняется)",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        Text(if (state.isDarkMode) "Тема: тёмная" else "Тема: светлая")
                         Switch(checked = state.isDarkMode, onCheckedChange = { onToggleTheme() })
                     }
                 }
@@ -225,15 +320,9 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(Modifier.padding(16.dp)) {
                         Text("История чата", style = MaterialTheme.typography.titleMedium)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "Сообщения сохраняются локально и восстанавливаются после перезапуска.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(Modifier.height(8.dp))
                         OutlinedButton(onClick = onClearChat, modifier = Modifier.fillMaxWidth()) {
                             Text("Очистить историю")
                         }
@@ -248,12 +337,11 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Хранилище моделей", style = MaterialTheme.typography.titleMedium)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(state.storagePath.ifBlank { "—" }, style = MaterialTheme.typography.bodyMedium)
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Хранилище", style = MaterialTheme.typography.titleMedium)
+                        Text(state.storagePath, style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { folderPicker.launch(null) }, modifier = Modifier.weight(1f)) {
                                 Icon(Icons.Default.FolderOpen, null, Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
@@ -263,31 +351,16 @@ fun SettingsScreen(
                                 Text("Путь")
                             }
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
                         OutlinedButton(
                             onClick = onResetStoragePath,
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = state.hasCustomStorage
-                        ) { Text("Сбросить на внутреннюю память") }
+                            enabled = state.hasCustomStorage,
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        ) { Text("Сбросить") }
                         if (showPathInput) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = pathText,
-                                onValueChange = { pathText = it },
-                                label = { Text("Путь к папке") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Button(
-                                onClick = {
-                                    if (pathText.isNotBlank()) {
-                                        onSetStoragePath(pathText.trim())
-                                        showPathInput = false
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text("Применить") }
+                            OutlinedTextField(value = pathText, onValueChange = { pathText = it }, modifier = Modifier.fillMaxWidth())
+                            Button(onClick = { if (pathText.isNotBlank()) { onSetStoragePath(pathText.trim()); showPathInput = false } }) {
+                                Text("Применить")
+                            }
                         }
                     }
                 }
@@ -298,37 +371,17 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(Modifier.padding(16.dp)) {
                         Text("Hugging Face", style = MaterialTheme.typography.titleMedium)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "Ссылка вида https://huggingface.co/.../resolve/main/*.gguf — скачивание идёт в фоне.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(value = state.hfUrlInput, onValueChange = onHfUrlChange, label = { Text("URL .gguf") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                         OutlinedTextField(
-                            value = state.hfUrlInput,
-                            onValueChange = onHfUrlChange,
-                            label = { Text("URL .gguf") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = state.hfToken,
-                            onValueChange = onHfTokenChange,
-                            label = { Text("HF token (опционально, для gated)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
+                            value = state.hfToken, onValueChange = onHfTokenChange,
+                            label = { Text("HF token") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
                             visualTransformation = PasswordVisualTransformation()
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(
-                            onClick = onDownloadHfUrl,
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = state.downloadState !is DownloadState.InProgress
-                        ) { Text("Скачать с Hugging Face") }
+                        Button(onClick = onDownloadHfUrl, modifier = Modifier.fillMaxWidth(), enabled = state.downloadState !is DownloadState.InProgress) {
+                            Text("Скачать с HF")
+                        }
                     }
                 }
             }
@@ -336,60 +389,17 @@ fun SettingsScreen(
             item(key = "download_banner") {
                 when (val ds = state.downloadState) {
                     is DownloadState.InProgress -> {
-                        val name = state.availableModels.firstOrNull { it.id == state.downloadingModelId }?.name
-                            ?: state.selectedModel?.name ?: "модель"
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text("Скачивание (фон): $name", style = MaterialTheme.typography.titleSmall)
-                                Spacer(modifier = Modifier.height(8.dp))
-                                if (ds.progress > 0f) {
-                                    LinearProgressIndicator(progress = ds.progress.coerceIn(0f, 1f), modifier = Modifier.fillMaxWidth())
-                                } else {
-                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                                }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        if (ds.progress > 0f) "${(ds.progress * 100).toInt()}%" else "Подключение…",
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                    OutlinedButton(onClick = onCancelDownload) { Text("Отмена") }
-                                }
+                        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text("Скачивание…")
+                                if (ds.progress > 0f) LinearProgressIndicator(progress = ds.progress, modifier = Modifier.fillMaxWidth())
+                                else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                OutlinedButton(onClick = onCancelDownload) { Text("Отмена") }
                             }
                         }
                     }
-                    is DownloadState.Failed -> {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                        ) {
-                            Text(
-                                "Ошибка загрузки: ${ds.reason}",
-                                modifier = Modifier.padding(16.dp),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        }
-                    }
-                    is DownloadState.Completed -> {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                        ) {
-                            Text(
-                                "✅ Модель готова. Нажми «Выбрать».",
-                                modifier = Modifier.padding(16.dp),
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
-                    }
+                    is DownloadState.Failed -> Text("Ошибка: ${ds.reason}", color = MaterialTheme.colorScheme.error)
+                    is DownloadState.Completed -> Text("✅ Готово — Выбрать")
                     else -> Unit
                 }
             }
@@ -398,107 +408,35 @@ fun SettingsScreen(
                 var logText by remember { mutableStateOf("") }
                 val localCtx = LocalContext.current
                 val expanded = state.logsPanelExpanded
-
                 LaunchedEffect(expanded, state.logsEnabled) {
                     if (expanded && state.logsEnabled) {
-                        while (true) {
-                            logText = AppLogger.getLogText()
-                            delay(2000)
-                        }
+                        while (true) { logText = AppLogger.getLogText(); delay(2000) }
                     }
                 }
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text("📋 Логи", style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    if (state.logsEnabled) "Запись включена (сохраняется)" else "Запись выключена (сохраняется)",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = state.logsEnabled,
-                                onCheckedChange = onSetLogsEnabled
-                            )
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                    Column(Modifier.padding(16.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Логи (запись)")
+                            Switch(checked = state.logsEnabled, onCheckedChange = onSetLogsEnabled)
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Показать панель", style = MaterialTheme.typography.bodyMedium)
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                if (expanded) {
-                                    IconButton(onClick = {
-                                        AppLogger.clear()
-                                        logText = ""
-                                    }) {
-                                        Icon(Icons.Default.Delete, "Очистить", Modifier.size(20.dp))
-                                    }
-                                    IconButton(onClick = { logText = AppLogger.getLogText() }) {
-                                        Icon(Icons.Default.Refresh, "Обновить", Modifier.size(20.dp))
-                                    }
-                                }
-                                Switch(
-                                    checked = expanded,
-                                    onCheckedChange = onSetLogsPanelExpanded
-                                )
-                            }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Панель")
+                            Switch(checked = expanded, onCheckedChange = onSetLogsPanelExpanded)
                         }
                         if (expanded) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Button(onClick = { AppLogger.copyToClipboard(localCtx) }, modifier = Modifier.fillMaxWidth()) {
-                                Text("📋 Копировать логи")
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(onClick = { AppLogger.copyToClipboard(localCtx) }, modifier = Modifier.fillMaxWidth()) { Text("Копировать") }
+                            IconButton(onClick = { AppLogger.clear(); logText = "" }) { Icon(Icons.Default.Delete, null) }
                             SelectionContainer {
-                                Text(
-                                    text = when {
-                                        !state.logsEnabled -> "Логирование выключено"
-                                        logText.isEmpty() -> "Логов пока нет"
-                                        else -> logText
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(max = 300.dp)
-                                        .verticalScroll(rememberScrollState())
-                                        .padding(8.dp)
-                                )
+                                Text(logText.ifEmpty { "пусто" }, style = MaterialTheme.typography.bodySmall, modifier = Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState()))
                             }
                         }
                     }
                 }
             }
 
-            item(key = "models_header") {
-                Text("Модели", style = MaterialTheme.typography.titleMedium)
-            }
+            item { Text("Модели", style = MaterialTheme.typography.titleMedium) }
 
-            if (state.isLoading && state.availableModels.isEmpty()) {
-                item(key = "models_loading") {
-                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator()
-                            Spacer(Modifier.height(8.dp))
-                            Text("Загрузка списка моделей…")
-                        }
-                    }
-                }
-            }
-
-            items(items = state.availableModels, key = { it.id }) { model ->
+            items(state.availableModels, key = { it.id }) { model ->
                 ModelCard(
                     model = model,
                     isActive = model.id == state.selectedModel?.id && state.isRealEngine,
@@ -513,8 +451,7 @@ fun SettingsScreen(
                 )
             }
 
-            item(key = "refresh_btn") {
-                Spacer(Modifier.height(4.dp))
+            item {
                 Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("Обновить список") }
                 Spacer(Modifier.height(24.dp))
             }
@@ -539,7 +476,6 @@ private fun ModelCard(
     val isDownloadingThis = downloadState is DownloadState.InProgress && downloadingModelId == model.id
     val downloadProgress = (downloadState as? DownloadState.InProgress)?.progress ?: 0f
     val anyDownloadInProgress = downloadState is DownloadState.InProgress
-
     Card(
         onClick = { if (model.isDownloaded) onSelect() },
         modifier = Modifier.fillMaxWidth(),
@@ -551,55 +487,34 @@ private fun ModelCard(
             }
         )
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.padding(12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(model.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 when {
-                    isActive -> Badge(containerColor = MaterialTheme.colorScheme.primary) { Text("В движке") }
+                    isActive -> Badge { Text("В движке") }
                     model.isDownloaded -> Badge { Text("Скачана") }
                 }
             }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "${model.sizeFormatted} · ${model.quantType} · ${model.parameterCount}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text("${model.sizeFormatted} · ${model.quantType}", style = MaterialTheme.typography.bodySmall)
             if (isDownloadingThis) {
-                Spacer(Modifier.height(8.dp))
-                if (downloadProgress > 0f) {
-                    LinearProgressIndicator(progress = downloadProgress.coerceIn(0f, 1f), modifier = Modifier.fillMaxWidth())
-                } else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Text(
-                    if (downloadProgress > 0f) "Загрузка… ${(downloadProgress * 100).toInt()}%" else "Подключение…",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                LinearProgressIndicator(progress = downloadProgress.coerceAtLeast(0.01f), modifier = Modifier.fillMaxWidth())
             }
-            if (engineLoading) {
-                Spacer(Modifier.height(8.dp))
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Text("Загрузка в llama.cpp…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-            }
+            if (engineLoading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (model.isDownloaded) {
                     Button(onClick = onSelect, modifier = Modifier.weight(1f), enabled = !engineLoading && !anyDownloadInProgress) {
                         Text(if (isActive) "Активна" else "Выбрать")
                     }
-                    OutlinedButton(
-                        onClick = onDelete,
-                        enabled = !isDownloadingThis && !engineLoading,
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) { Text("Удалить") }
+                    OutlinedButton(onClick = onDelete, colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                        Text("Удалить")
+                    }
                 } else if (isDownloadingThis) {
                     OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Отменить") }
                 } else {
-                    Button(
-                        onClick = onDownload,
-                        modifier = Modifier.weight(1f),
-                        enabled = !anyDownloadInProgress && model.downloadUrl.isNotBlank()
-                    ) { Text("Скачать") }
+                    Button(onClick = onDownload, modifier = Modifier.weight(1f), enabled = !anyDownloadInProgress && model.downloadUrl.isNotBlank()) {
+                        Text("Скачать")
+                    }
                 }
             }
         }
