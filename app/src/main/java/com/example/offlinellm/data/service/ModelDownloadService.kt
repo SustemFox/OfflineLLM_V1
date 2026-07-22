@@ -15,9 +15,7 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.example.offlinellm.MainActivity
 import com.example.offlinellm.data.local.AppLogger
-import com.example.offlinellm.data.local.AppPreferences
 import com.example.offlinellm.data.repository.ModelRepositoryImpl
-import com.example.offlinellm.llama.ModelLoader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -36,6 +34,8 @@ class ModelDownloadService : Service() {
     private var job: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    private var lastNotifMs = 0L
+    private var lastNotifPct = -1
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -85,7 +85,6 @@ class ModelDownloadService : Service() {
         acquireLocks()
 
         val repo = ModelRepositoryImpl(applicationContext)
-        // Apply HF token header via system property style: repo reads prefs
         job = scope.launch {
             try {
                 AppLogger.d("DlService", "start $modelId")
@@ -98,7 +97,13 @@ class ModelDownloadService : Service() {
                     }
                     .collect { p ->
                         val pct = (p * 100).toInt().coerceIn(0, 100)
-                        updateNotification(name, pct, indeterminate = p <= 0f)
+                        // Throttle notification binder calls — was a major slowdown
+                        val now = System.currentTimeMillis()
+                        if (now - lastNotifMs >= NOTIF_INTERVAL_MS || pct != lastNotifPct && pct % 2 == 0) {
+                            updateNotification(name, pct, indeterminate = p <= 0f)
+                            lastNotifMs = now
+                            lastNotifPct = pct
+                        }
                         broadcast(STATUS_PROGRESS, modelId, p, null)
                     }
                 broadcast(STATUS_COMPLETED, modelId, 1f, null)
@@ -156,6 +161,7 @@ class ModelDownloadService : Service() {
             .setContentIntent(open)
             .setOnlyAlertOnce(true)
             .setOngoing(true)
+            .setSilent(true)
             .addAction(0, "Отмена", cancel)
         if (indeterminate) {
             b.setProgress(0, 0, true)
@@ -196,7 +202,7 @@ class ModelDownloadService : Service() {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "offlinellm:download").apply {
                 setReferenceCounted(false)
-                acquire(3 * 60 * 60 * 1000L) // 3h max
+                acquire(3 * 60 * 60 * 1000L)
             }
         } catch (t: Throwable) {
             AppLogger.e("DlService", "wakelock: ${t.message}", t)
@@ -238,6 +244,7 @@ class ModelDownloadService : Service() {
     companion object {
         const val CHANNEL_ID = "model_download"
         const val NOTIF_ID = 42
+        private const val NOTIF_INTERVAL_MS = 1500L
 
         const val ACTION_START = "com.example.offlinellm.DOWNLOAD_START"
         const val ACTION_CANCEL = "com.example.offlinellm.DOWNLOAD_CANCEL"
