@@ -156,16 +156,20 @@ Java_com_example_offlinellm_llama_LlamaBridge_releaseContext(JNIEnv *, jclass, j
     delete handle;
 }
 
-/** Qwen2 / ChatML-style prompt — plain User/Assistant loops badly on 0.5B. */
+/** ChatML for Qwen2.5 / Qwen3 / Qwen3.5 — plain User/Assistant loops on tiny models. */
 static std::string build_prompt(const std::string & system, const std::string & user) {
     std::string sys = system;
     if (sys.empty()) {
         sys = "You are a helpful offline assistant on a phone. Answer briefly in the user's language. "
               "Do not repeat the same paragraph. Do not use XML tags.";
     }
-    // ChatML (Qwen2 / many instruct GGUFs)
+    // Qwen3 / 3.5 default to "thinking" mode; keep answers short on-device
+    if (sys.find("/no_think") == std::string::npos &&
+        sys.find("/think") == std::string::npos) {
+        sys += "\n/no_think";
+    }
     std::string p;
-    p.reserve(sys.size() + user.size() + 128);
+    p.reserve(sys.size() + user.size() + 160);
     p += "<|im_start|>system\n";
     p += sys;
     p += "<|im_end|>\n";
@@ -377,6 +381,8 @@ static llama_sampler * make_sampler(
 
 static bool looks_like_im_end(const std::string & out) {
     return out.find("<|im_end|>") != std::string::npos
+        || out.find("</think>") != std::string::npos
+        || out.find("<think>") != std::string::npos
         || out.find("<|endoftext|>") != std::string::npos
         || out.find("<|im_start|>") != std::string::npos;
 }
