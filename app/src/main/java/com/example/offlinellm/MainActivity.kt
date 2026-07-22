@@ -22,7 +22,7 @@ import com.example.offlinellm.ui.theme.OfflineLlmTheme
 class MainActivity : ComponentActivity() {
     private val notifPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* optional */ }
+    ) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,6 +69,18 @@ fun AppRoot() {
                     onDownloadHfUrl = { viewModel.downloadFromHfUrl() },
                     onClearChat = { viewModel.clearChat() },
                     onAccelPref = { viewModel.setAccelPref(it) },
+                    onServerPortInput = { viewModel.setServerPortInput(it) },
+                    onApplyServerPort = { viewModel.applyServerPort() },
+                    onRefreshIps = { viewModel.refreshLocalIps() },
+                    onTemperature = { viewModel.setTemperature(it) },
+                    onTopP = { viewModel.setTopP(it) },
+                    onMaxTokens = { viewModel.setMaxTokens(it) },
+                    onNCtx = { viewModel.setNCtx(it) },
+                    onThreads = { viewModel.setThreads(it) },
+                    onSystemPrompt = { viewModel.setSystemPrompt(it) },
+                    onShowThinking = { viewModel.setShowThinking(it) },
+                    onRepeatPenalty = { viewModel.setRepeatPenalty(it) },
+                    onFrequencyPenalty = { viewModel.setFrequencyPenalty(it) },
                 )
             }
         }
