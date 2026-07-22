@@ -29,7 +29,12 @@ object AppPreferences {
     private const val KEY_N_GPU_LAYERS = "llm_n_gpu_layers"
 
     const val DEFAULT_SYSTEM_PROMPT =
-        "Ты — локальный оффлайн-ассистент на телефоне. Отвечай кратко, по делу, на языке пользователя. Не используй XML/HTML-теги (в том числе think/thinking). Не повторяй один абзац или фразу. Не уходи в посторонние темы (колл-центр, китайский и т.п.), если пользователь об этом не просил. Данные никуда не отправляются."private fun p(ctx: Context): SharedPreferences =
+        "Ты — локальный оффлайн-ассистент на телефоне. Отвечай кратко, по делу, на языке пользователя. " +
+            "Не используй XML/HTML-теги (в том числе think/thinking). " +
+            "Не повторяй один абзац или фразу. Не уходи в посторонние темы (колл-центр и т.п.), " +
+            "если пользователь об этом не просил. Данные никуда не отправляются."
+
+    private fun p(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun isLogsEnabled(ctx: Context): Boolean =
@@ -129,9 +134,11 @@ object AppPreferences {
     fun getSystemPrompt(ctx: Context): String {
         val stored = p(ctx).getString(KEY_SYSTEM_PROMPT, null)?.takeIf { it.isNotBlank() }
             ?: return DEFAULT_SYSTEM_PROMPT
-        // Migrate older prompt that forced <think> blocks (breaks tiny models / UI)
-        if (stored.contains("<think>") || stored.contains("</think>") ||
-            stored.contains("блоке <think") || stored.contains("chain-of-thought")
+        // Older builds forced <think> in the system prompt — breaks tiny models and leaks tags in UI
+        if (stored.contains("<think>") ||
+            stored.contains("</think>") ||
+            stored.contains("блоке <think") ||
+            stored.contains("chain-of-thought")
         ) {
             return DEFAULT_SYSTEM_PROMPT
         }
