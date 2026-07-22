@@ -1,0 +1,72 @@
+package com.example.offlinellm.data.local
+
+import android.content.Context
+import android.content.SharedPreferences
+
+/**
+ * Central app preferences (persist across process death).
+ */
+object AppPreferences {
+    private const val PREFS = "offlinellm_prefs"
+
+    private const val KEY_LOGS_ENABLED = "logs_enabled"
+    private const val KEY_LOGS_PANEL = "logs_panel_expanded"
+    private const val KEY_DARK_MODE = "dark_mode"
+    private const val KEY_HF_TOKEN = "hf_token"
+    private const val KEY_LAST_HF_URL = "last_hf_url"
+    private const val KEY_SELECTED_MODEL = "selected_model_id"
+    private const val KEY_ACCEL_PREF = "accel_pref" // auto|cpu|vulkan
+
+    private fun p(ctx: Context): SharedPreferences =
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    fun isLogsEnabled(ctx: Context): Boolean =
+        p(ctx).getBoolean(KEY_LOGS_ENABLED, true)
+
+    fun setLogsEnabled(ctx: Context, enabled: Boolean) {
+        p(ctx).edit().putBoolean(KEY_LOGS_ENABLED, enabled).apply()
+        AppLogger.setEnabled(enabled)
+    }
+
+    fun isLogsPanelExpanded(ctx: Context): Boolean =
+        p(ctx).getBoolean(KEY_LOGS_PANEL, false)
+
+    fun setLogsPanelExpanded(ctx: Context, expanded: Boolean) {
+        p(ctx).edit().putBoolean(KEY_LOGS_PANEL, expanded).apply()
+    }
+
+    fun isDarkMode(ctx: Context): Boolean =
+        p(ctx).getBoolean(KEY_DARK_MODE, true)
+
+    fun setDarkMode(ctx: Context, dark: Boolean) {
+        p(ctx).edit().putBoolean(KEY_DARK_MODE, dark).apply()
+    }
+
+    fun getHfToken(ctx: Context): String =
+        p(ctx).getString(KEY_HF_TOKEN, "") ?: ""
+
+    fun setHfToken(ctx: Context, token: String) {
+        p(ctx).edit().putString(KEY_HF_TOKEN, token.trim()).apply()
+    }
+
+    fun getLastHfUrl(ctx: Context): String =
+        p(ctx).getString(KEY_LAST_HF_URL, "") ?: ""
+
+    fun setLastHfUrl(ctx: Context, url: String) {
+        p(ctx).edit().putString(KEY_LAST_HF_URL, url.trim()).apply()
+    }
+
+    fun getSelectedModelId(ctx: Context): String? =
+        p(ctx).getString(KEY_SELECTED_MODEL, null)
+
+    fun setSelectedModelId(ctx: Context, id: String?) {
+        p(ctx).edit().putString(KEY_SELECTED_MODEL, id).apply()
+    }
+
+    fun getAccelPref(ctx: Context): String =
+        p(ctx).getString(KEY_ACCEL_PREF, "auto") ?: "auto"
+
+    fun setAccelPref(ctx: Context, pref: String) {
+        p(ctx).edit().putString(KEY_ACCEL_PREF, pref).apply()
+    }
+}
