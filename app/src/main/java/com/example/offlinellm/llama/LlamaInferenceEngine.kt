@@ -8,22 +8,35 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
-/**
- * High-level Kotlin wrapper around native llama.cpp inference.
- */
 class LlamaInferenceEngine(
     private val modelPath: String,
-    private val nCtx: Int = 2048,
-    private val nGpuLayers: Int = 0,       // CPU-safe default (GPU offload only if backend supports)
-    private val threads: Int = Runtime.getRuntime().availableProcessors().coerceIn(2, 6),
-    private val maxTokens: Int = 512,
-    private val temperature: Float = 0.7f,
-    private val topP: Float = 0.9f
+    private var nCtx: Int = 2048,
+    private var nGpuLayers: Int = 0,
+    private var threads: Int = Runtime.getRuntime().availableProcessors().coerceIn(2, 6),
+    private var maxTokens: Int = 256,
+    private var temperature: Float = 0.7f,
+    private var topP: Float = 0.9f,
+    private var repeatPenalty: Float = 1.15f,
+    private var frequencyPenalty: Float = 0.15f
 ) {
     private var contextPtr: Long = 0L
 
     val activeBackend: String
         get() = LlamaBridge.getBackendInfoSafe()
+
+    fun updateSampling(
+        maxTokens: Int,
+        temperature: Float,
+        topP: Float,
+        repeatPenalty: Float,
+        frequencyPenalty: Float
+    ) {
+        this.maxTokens = maxTokens
+        this.temperature = temperature
+        this.topP = topP
+        this.repeatPenalty = repeatPenalty
+        this.frequencyPenalty = frequencyPenalty
+    }
 
     suspend fun load() = withContext(Dispatchers.IO) {
         if (contextPtr != 0L) return@withContext
@@ -33,7 +46,11 @@ class LlamaInferenceEngine(
                     (LlamaBridge.lastError?.let { ": $it" } ?: "")
             )
         }
-        AppLogger.d("Engine", "createContext path=$modelPath nCtx=$nCtx gpuLayers=$nGpuLayers threads=$threads")
+        AppLogger.d(
+            "Engine",
+            "createContext path=$modelPath nCtx=$nCtx gpuLayers=$nGpuLayers threads=$threads " +
+                "temp=$temperature topP=$topP maxTok=$maxTokens repPen=$repeatPenalty"
+        )
         contextPtr = LlamaBridge.createContext(modelPath, nCtx, nGpuLayers, threads)
         if (contextPtr == 0L) {
             throw IllegalStateException("Failed to create llama context for $modelPath")
@@ -46,7 +63,10 @@ class LlamaInferenceEngine(
         systemPrompt: String = ""
     ): String = withContext(Dispatchers.IO) {
         ensureLoaded()
-        LlamaBridge.runInference(contextPtr, prompt, systemPrompt, maxTokens, temperature, topP)
+        LlamaBridge.runInference(
+            contextPtr, prompt, systemPrompt, maxTokens, temperature, topP,
+            repeatPenalty, frequencyPenalty
+        )
     }
 
     fun generateStream(
@@ -78,6 +98,8 @@ class LlamaInferenceEngine(
                 maxTokens,
                 temperature,
                 topP,
+                repeatPenalty,
+                frequencyPenalty,
                 LlamaBridge.TokenCallback { token ->
                     if (!isActive) return@TokenCallback
                     acc.append(token)
