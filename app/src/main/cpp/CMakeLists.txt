@@ -6,16 +6,19 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
 
+# Latest stable-ish release pin of ggml-org/llama.cpp (CPU-only for this APK)
+set(OFFLINELLM_LLAMA_TAG "b10079" CACHE STRING "llama.cpp git tag/branch")
+
 set(LLAMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp)
 if (EXISTS "${LLAMA_DIR}/CMakeLists.txt")
     message(STATUS "Using local llama.cpp at ${LLAMA_DIR}")
     set(LLAMA_SRC ${LLAMA_DIR})
 else()
-    message(STATUS "Fetching llama.cpp b5250 (stable-ish pin)")
+    message(STATUS "Fetching llama.cpp ${OFFLINELLM_LLAMA_TAG}")
     FetchContent_Declare(
         llama_cpp
         GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git
-        GIT_TAG        b5250
+        GIT_TAG        ${OFFLINELLM_LLAMA_TAG}
         GIT_SHALLOW    TRUE
     )
     FetchContent_GetProperties(llama_cpp)
@@ -57,3 +60,6 @@ else()
 endif()
 
 target_compile_options(offlinellm_jni PRIVATE -O3 -fvisibility=hidden)
+
+# Surface pin in backend string via compile definition
+target_compile_definitions(offlinellm_jni PRIVATE OFFLINELLM_LLAMA_TAG="${OFFLINELLM_LLAMA_TAG}")
