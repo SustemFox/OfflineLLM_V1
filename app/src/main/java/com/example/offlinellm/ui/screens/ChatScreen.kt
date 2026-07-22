@@ -44,7 +44,7 @@ fun ChatScreen(
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
-    LaunchedEffect(state.messages.size, state.isGenerating) {
+    LaunchedEffect(state.messages.size, state.isGenerating, state.messages.lastOrNull()?.text) {
         if (state.messages.isNotEmpty()) {
             listState.animateScrollToItem(state.messages.lastIndex)
         }
@@ -62,7 +62,8 @@ fun ChatScreen(
                             }
                             if (state.isServerRunning) {
                                 if (isNotEmpty()) append(" · ")
-                                append("API :${state.serverPort ?: 8080}")
+                                val ip = state.localIps.firstOrNull() ?: "…"
+                                append("$ip:${state.serverPort}")
                             }
                         }
                         if (subtitle.isNotEmpty()) {
@@ -152,7 +153,7 @@ fun ChatScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "✅ Модель готова — открой настройки и нажми «Выбрать»",
+                            "✅ Модель готова — «Выбрать» в настройках",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.weight(1f)
@@ -182,7 +183,10 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 items(state.messages, key = { it.id }) { message ->
-                    MessageItem(message = message)
+                    MessageItem(
+                        message = message,
+                        onToggleThinking = { viewModel.toggleThinking(message.id) }
+                    )
                 }
                 if (state.isGenerating) {
                     item(key = "typing") { TypingIndicator() }
