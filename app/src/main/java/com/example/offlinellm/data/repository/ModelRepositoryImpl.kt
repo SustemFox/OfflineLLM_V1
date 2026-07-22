@@ -95,12 +95,7 @@ class ModelRepositoryImpl(
             }
     }
 
-    override fun getActiveBackend(): String = try {
-        LlamaBridge.load()
-        LlamaBridge.getBackendInfo()
-    } catch (_: Throwable) {
-        "CPU (fallback)"
-    }
+    override fun getActiveBackend(): String = LlamaBridge.getBackendInfoSafe()
 
     override fun cancelDownload(modelId: String) {
         cancelFlags[modelId] = true
