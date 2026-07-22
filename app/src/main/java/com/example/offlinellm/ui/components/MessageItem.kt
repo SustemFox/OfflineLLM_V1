@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.example.offlinellm.domain.model.Message
+import com.example.offlinellm.domain.model.ResponseParser
 import com.example.offlinellm.ui.theme.AssistantBubble
 import com.example.offlinellm.ui.theme.ErrorBubble
 import com.example.offlinellm.ui.theme.UserBubble
@@ -88,8 +89,11 @@ fun MessageItem(
                     Spacer(Modifier.height(6.dp))
                 }
             }
-            if (message.text.isNotBlank() || message.sender != Message.Sender.LLM) {
-                Text(text = message.text, color = textColor, style = style)
+            val displayText = if (message.sender == Message.Sender.LLM) {
+                ResponseParser.stripThinkTags(message.text)
+            } else message.text
+            if (displayText.isNotBlank() || message.sender != Message.Sender.LLM) {
+                Text(text = displayText, color = textColor, style = style)
             } else if (message.thinking != null && !message.thinkingExpanded) {
                 Text(
                     text = "…",
