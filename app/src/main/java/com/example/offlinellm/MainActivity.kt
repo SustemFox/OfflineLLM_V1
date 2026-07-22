@@ -1,8 +1,11 @@
 package com.example.offlinellm
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -17,8 +20,15 @@ import com.example.offlinellm.ui.screens.SettingsScreen
 import com.example.offlinellm.ui.theme.OfflineLlmTheme
 
 class MainActivity : ComponentActivity() {
+    private val notifPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* optional */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= 33) {
+            notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         setContent { AppRoot() }
     }
 }
@@ -52,6 +62,13 @@ fun AppRoot() {
                     onSetStoragePath = { viewModel.setCustomStoragePath(it) },
                     onResetStoragePath = { viewModel.resetStoragePath() },
                     onToggleTheme = { viewModel.toggleTheme() },
+                    onSetLogsEnabled = { viewModel.setLogsEnabled(it) },
+                    onSetLogsPanelExpanded = { viewModel.setLogsPanelExpanded(it) },
+                    onHfTokenChange = { viewModel.setHfToken(it) },
+                    onHfUrlChange = { viewModel.setHfUrlInput(it) },
+                    onDownloadHfUrl = { viewModel.downloadFromHfUrl() },
+                    onClearChat = { viewModel.clearChat() },
+                    onAccelPref = { viewModel.setAccelPref(it) },
                 )
             }
         }
