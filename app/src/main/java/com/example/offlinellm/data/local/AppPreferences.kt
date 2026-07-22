@@ -15,7 +15,23 @@ object AppPreferences {
     private const val KEY_HF_TOKEN = "hf_token"
     private const val KEY_LAST_HF_URL = "last_hf_url"
     private const val KEY_SELECTED_MODEL = "selected_model_id"
-    private const val KEY_ACCEL_PREF = "accel_pref" // auto|cpu|vulkan
+    private const val KEY_ACCEL_PREF = "accel_pref"
+    private const val KEY_SERVER_PORT = "server_port"
+    private const val KEY_TEMPERATURE = "llm_temperature"
+    private const val KEY_TOP_P = "llm_top_p"
+    private const val KEY_MAX_TOKENS = "llm_max_tokens"
+    private const val KEY_N_CTX = "llm_n_ctx"
+    private const val KEY_THREADS = "llm_threads"
+    private const val KEY_SYSTEM_PROMPT = "llm_system_prompt"
+    private const val KEY_SHOW_THINKING = "llm_show_thinking"
+    private const val KEY_REPEAT_PENALTY = "llm_repeat_penalty"
+    private const val KEY_FREQ_PENALTY = "llm_freq_penalty"
+
+    const val DEFAULT_SYSTEM_PROMPT =
+        "Ты — локальный оффлайн-ассистент на телефоне. Отвечай полезно и по делу. " +
+            "Не повторяй один и тот же абзац или фразу. Если нужна пошаговая мысль — " +
+            "сначала кратко в блоке <think>...</think>, затем обычный ответ пользователю. " +
+            "Данные никуда не отправляются."
 
     private fun p(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -68,5 +84,78 @@ object AppPreferences {
 
     fun setAccelPref(ctx: Context, pref: String) {
         p(ctx).edit().putString(KEY_ACCEL_PREF, pref).apply()
+    }
+
+    fun getServerPort(ctx: Context): Int =
+        p(ctx).getInt(KEY_SERVER_PORT, 8080).coerceIn(1024, 65535)
+
+    fun setServerPort(ctx: Context, port: Int) {
+        p(ctx).edit().putInt(KEY_SERVER_PORT, port.coerceIn(1024, 65535)).apply()
+    }
+
+    fun getTemperature(ctx: Context): Float =
+        p(ctx).getFloat(KEY_TEMPERATURE, 0.7f)
+
+    fun setTemperature(ctx: Context, v: Float) {
+        p(ctx).edit().putFloat(KEY_TEMPERATURE, v.coerceIn(0.01f, 2f)).apply()
+    }
+
+    fun getTopP(ctx: Context): Float =
+        p(ctx).getFloat(KEY_TOP_P, 0.9f)
+
+    fun setTopP(ctx: Context, v: Float) {
+        p(ctx).edit().putFloat(KEY_TOP_P, v.coerceIn(0.05f, 1f)).apply()
+    }
+
+    fun getMaxTokens(ctx: Context): Int =
+        p(ctx).getInt(KEY_MAX_TOKENS, 256).coerceIn(16, 4096)
+
+    fun setMaxTokens(ctx: Context, v: Int) {
+        p(ctx).edit().putInt(KEY_MAX_TOKENS, v.coerceIn(16, 4096)).apply()
+    }
+
+    fun getNCtx(ctx: Context): Int =
+        p(ctx).getInt(KEY_N_CTX, 2048).coerceIn(512, 8192)
+
+    fun setNCtx(ctx: Context, v: Int) {
+        p(ctx).edit().putInt(KEY_N_CTX, v.coerceIn(512, 8192)).apply()
+    }
+
+    fun getThreads(ctx: Context): Int {
+        val def = Runtime.getRuntime().availableProcessors().coerceIn(2, 6)
+        return p(ctx).getInt(KEY_THREADS, def).coerceIn(1, 16)
+    }
+
+    fun setThreads(ctx: Context, v: Int) {
+        p(ctx).edit().putInt(KEY_THREADS, v.coerceIn(1, 16)).apply()
+    }
+
+    fun getSystemPrompt(ctx: Context): String =
+        p(ctx).getString(KEY_SYSTEM_PROMPT, null)?.takeIf { it.isNotBlank() }
+            ?: DEFAULT_SYSTEM_PROMPT
+
+    fun setSystemPrompt(ctx: Context, v: String) {
+        p(ctx).edit().putString(KEY_SYSTEM_PROMPT, v).apply()
+    }
+
+    fun isShowThinking(ctx: Context): Boolean =
+        p(ctx).getBoolean(KEY_SHOW_THINKING, true)
+
+    fun setShowThinking(ctx: Context, v: Boolean) {
+        p(ctx).edit().putBoolean(KEY_SHOW_THINKING, v).apply()
+    }
+
+    fun getRepeatPenalty(ctx: Context): Float =
+        p(ctx).getFloat(KEY_REPEAT_PENALTY, 1.15f)
+
+    fun setRepeatPenalty(ctx: Context, v: Float) {
+        p(ctx).edit().putFloat(KEY_REPEAT_PENALTY, v.coerceIn(1.0f, 2.0f)).apply()
+    }
+
+    fun getFrequencyPenalty(ctx: Context): Float =
+        p(ctx).getFloat(KEY_FREQ_PENALTY, 0.15f)
+
+    fun setFrequencyPenalty(ctx: Context, v: Float) {
+        p(ctx).edit().putFloat(KEY_FREQ_PENALTY, v.coerceIn(0f, 1f)).apply()
     }
 }
