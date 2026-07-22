@@ -1,17 +1,12 @@
 # OfflineLLM_V1 — Статус
 
-> Ветка: `main`
-> Фокус: **v1.2** — фон скачивания, история, prefs, HF URL
+> v1.3.0-llm — server IP/port, LLM settings, thinking UI, anti-repetition
 
-## v1.2
-- Переключатель логов **сохраняется** (`AppPreferences` + `AppLogger.setEnabled`)
-- Панель логов (развёрнута/свёрнута) тоже в prefs
-- Тема dark/light сохраняется
-- **История чата** в `filesDir/chat_history.json`
-- **ForegroundService** `ModelDownloadService` — скачивание при свёрнутом приложении (уведомление + wake/wifi lock)
-- **Hugging Face**: поле URL + optional token (gated models), resume через HTTP Range
-- Ускорители: UI preference auto/cpu/vulkan; runtime пока **CPU JNI** (Vulkan prebuilts были битые; полный GPU build — follow-up)
-- Рекомендованные модели: добавлен Qwen 0.5B
+## v1.3
+- HTTP: shows real LAN IP(s) + editable port (1024–65535), restart on apply
+- LLM settings: temperature, top_p, max tokens, n_ctx, threads, system prompt, show thinking, repeat/freq penalty
+- Chat: collapsible **Мышление** from `<think>` / `<thinking>` tags
+- JNI: repeat penalty + frequency penalty + loop/degenerate stop + top-k
 
-## CI
-Artifact name остаётся `OfflineLLM-v1.0` (workflow App не редактирует). versionName APK: `1.2.0-bg`.
+## CI tip
+Artifact OfflineLLM-v1.0 ; rebuild via empty commit OK.
