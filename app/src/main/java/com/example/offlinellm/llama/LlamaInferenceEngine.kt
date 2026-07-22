@@ -102,6 +102,16 @@ class LlamaInferenceEngine(
                 frequencyPenalty,
                 LlamaBridge.TokenCallback { text ->
                     if (!isActive) return@TokenCallback
+                    if (text.isEmpty()) {
+                        AppLogger.d("Engine", "stream chunk empty")
+                    } else if (text.length <= 120) {
+                        AppLogger.d("Engine", "stream chunk len=${text.length}: $text")
+                    } else {
+                        AppLogger.d(
+                            "Engine",
+                            "stream chunk len=${text.length}: ${text.take(80)}…${text.takeLast(40)}"
+                        )
+                    }
                     trySend(text)
                 }
             )
