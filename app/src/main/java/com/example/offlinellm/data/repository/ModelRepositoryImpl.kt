@@ -127,29 +127,26 @@ class ModelRepositoryImpl(
 
         try {
             var currentUrl = downloadUrl
-            var conn: HttpURLConnection? = null
-            repeat(8) { hop ->
+            var connection: HttpURLConnection? = null
+
+            // Follow redirects manually; STOP on first 2xx (do NOT return@repeat — that continues the loop!)
+            for (hop in 0 until 8) {
                 currentCoroutineContext().ensureActive()
                 if (cancelFlags[modelId] == true) error("Download cancelled")
 
+                // Close previous failed hop connection if any
+                try { connection?.disconnect() } catch (_: Throwable) {}
+
                 val c = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
                     instanceFollowRedirects = false
-                    // Longer timeouts; avoid gzip (identity) so we get raw GGUF + Content-Length
                     connectTimeout = 60_000
                     readTimeout = 300_000
-                    // Prefer larger TCP receive buffer when the platform allows it
-                    try {
-                        // 1 MiB hint — ignored on some stacks, harmless
-                        // no setReceiveBufferSize on HttpURLConnection; OS default
-                    } catch (_: Throwable) {
-                    }
                     setRequestProperty(
                         "User-Agent",
                         "OfflineLLM/1.5 (Android; HF-GGUF)"
                     )
                     setRequestProperty("Accept", "application/octet-stream,*/*")
                     setRequestProperty("Accept-Encoding", "identity")
-                    // Help CDN keep-alive
                     setRequestProperty("Connection", "keep-alive")
                     if (hfToken.isNotBlank()) {
                         setRequestProperty("Authorization", "Bearer $hfToken")
@@ -162,15 +159,18 @@ class ModelRepositoryImpl(
                 c.connect()
                 val code = c.responseCode
                 AppLogger.d("Download", "hop=$hop code=$code url=$currentUrl")
+
                 if (code in 300..399) {
                     val loc = c.getHeaderField("Location")
                         ?: error("Redirect without Location (HTTP $code)")
                     c.disconnect()
+                    connection = null
                     currentUrl = if (loc.startsWith("http")) loc else {
                         URL(URL(currentUrl), loc).toString()
                     }
-                    return@repeat
+                    continue // follow redirect
                 }
+
                 if (code !in 200..299) {
                     val err = try {
                         c.errorStream?.bufferedReader()?.readText()?.take(300)
@@ -178,6 +178,7 @@ class ModelRepositoryImpl(
                         null
                     }
                     c.disconnect()
+                    connection = null
                     if (resumeFrom > 0 && code == 416) {
                         resumeFrom = 0L
                         tempFile.delete()
@@ -185,27 +186,31 @@ class ModelRepositoryImpl(
                     }
                     error("HTTP $code${err?.let { ": $it" } ?: ""}")
                 }
+
+                // Success 200/206 — use this connection for the body
                 if (code == 200 && resumeFrom > 0L) {
+                    // Server ignored Range — restart from 0
+                    AppLogger.d("Download", "Server ignored Range; restarting from 0")
                     resumeFrom = 0L
                     tempFile.delete()
                 }
-                conn = c
-                return@repeat
+                connection = c
+                break // CRITICAL: leave redirect loop and stream the body
             }
-            val connection = conn ?: error("Too many redirects")
 
-            val headerLen = connection.contentLengthLong
+            val conn = connection ?: error("Too many redirects")
+
+            val headerLen = conn.contentLengthLong
             val totalBytes = when {
-                headerLen > 0 && resumeFrom > 0 && connection.responseCode == 206 ->
+                headerLen > 0 && resumeFrom > 0 && conn.responseCode == 206 ->
                     resumeFrom + headerLen
                 headerLen > 0 -> headerLen
                 else -> -1L
             }
             AppLogger.d("Download", "Total bytes est: $totalBytes resumeFrom=$resumeFrom")
 
-            // Fast path: large buffer + buffered streams; NO double-open of temp file
             val buffer = ByteArray(BUFFER_SIZE)
-            BufferedInputStream(connection.inputStream, BUFFER_SIZE).use { input ->
+            BufferedInputStream(conn.inputStream, BUFFER_SIZE).use { input ->
                 BufferedOutputStream(
                     FileOutputStream(tempFile, resumeFrom > 0L),
                     BUFFER_SIZE
@@ -227,12 +232,10 @@ class ModelRepositoryImpl(
                         totalRead += read
 
                         val now = System.currentTimeMillis()
-                        // Throttle UI emits — frequent emit/notification was killing throughput
                         if (now - lastEmitMs >= EMIT_INTERVAL_MS || totalBytes <= 0) {
                             val progress = if (totalBytes > 0) {
                                 (totalRead.toFloat() / totalBytes.toFloat()).coerceIn(0f, 0.999f)
                             } else {
-                                // unknown size: pulse 0 so UI shows indeterminate, not fake %
                                 0f
                             }
                             emit(progress)
@@ -259,7 +262,7 @@ class ModelRepositoryImpl(
                     if (totalRead <= 0L) error("Empty download (0 bytes)")
                 }
             }
-            connection.disconnect()
+            try { conn.disconnect() } catch (_: Throwable) {}
 
             if (destFile.exists()) destFile.delete()
             if (!tempFile.renameTo(destFile)) {
@@ -294,7 +297,7 @@ class ModelRepositoryImpl(
     companion object {
         /** 1 MiB chunks — fewer syscalls than 256 KiB */
         private const val BUFFER_SIZE = 1 * 1024 * 1024
-        /** UI progress throttle (service also throttles notifications) */
+        /** UI progress throttle */
         private const val EMIT_INTERVAL_MS = 750L
     }
 }
