@@ -26,6 +26,7 @@ object AppPreferences {
     private const val KEY_SHOW_THINKING = "llm_show_thinking"
     private const val KEY_REPEAT_PENALTY = "llm_repeat_penalty"
     private const val KEY_FREQ_PENALTY = "llm_freq_penalty"
+    private const val KEY_N_GPU_LAYERS = "llm_n_gpu_layers"
 
     const val DEFAULT_SYSTEM_PROMPT =
         "Ты — локальный оффлайн-ассистент на телефоне. Отвечай полезно и по делу. " +
@@ -157,5 +158,22 @@ object AppPreferences {
 
     fun setFrequencyPenalty(ctx: Context, v: Float) {
         p(ctx).edit().putFloat(KEY_FREQ_PENALTY, v.coerceIn(0f, 1f)).apply()
+    }
+
+    fun getNGpuLayers(ctx: Context): Int =
+        p(ctx).getInt(KEY_N_GPU_LAYERS, 99).coerceIn(0, 999)
+
+    fun setNGpuLayers(ctx: Context, v: Int) {
+        p(ctx).edit().putInt(KEY_N_GPU_LAYERS, v.coerceIn(0, 999)).apply()
+    }
+
+    /** Resolve effective n_gpu_layers from accel pref + slider. */
+    fun resolveNGpuLayers(ctx: Context): Int {
+        return when (getAccelPref(ctx)) {
+            "cpu" -> 0
+            "vulkan" -> 0 // step 2 — not in this APK
+            "opencl", "auto" -> getNGpuLayers(ctx)
+            else -> getNGpuLayers(ctx)
+        }
     }
 }
