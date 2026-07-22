@@ -129,7 +129,8 @@ class ChatViewModel(
             systemPrompt = AppPreferences.getSystemPrompt(application),
             showThinking = AppPreferences.isShowThinking(application),
             repeatPenalty = AppPreferences.getRepeatPenalty(application),
-            frequencyPenalty = AppPreferences.getFrequencyPenalty(application)
+            frequencyPenalty = AppPreferences.getFrequencyPenalty(application),
+            nGpuLayers = AppPreferences.getNGpuLayers(application)
         )
 
         val filter = IntentFilter(ModelDownloadService.ACTION_PROGRESS)
@@ -532,6 +533,13 @@ class ChatViewModel(
         _uiState.value = _uiState.value.copy(frequencyPenalty = AppPreferences.getFrequencyPenalty(application))
         applyLiveSampling()
     }
+
+    fun setNGpuLayers(v: Int) {
+        val c = v.coerceIn(0, 999)
+        AppPreferences.setNGpuLayers(application, c)
+        _uiState.value = _uiState.value.copy(nGpuLayers = c)
+    }
+
 
     private fun applyLiveSampling() {
         try {
