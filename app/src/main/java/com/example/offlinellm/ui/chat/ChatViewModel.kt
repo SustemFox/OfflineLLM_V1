@@ -772,7 +772,8 @@ class ChatViewModel(
         val systemPrompt: String = "",
         val showThinking: Boolean = true,
         val repeatPenalty: Float = 1.15f,
-        val frequencyPenalty: Float = 0.15f
+        val frequencyPenalty: Float = 0.15f,
+        val nGpuLayers: Int = 99
     )
 
     fun setCustomStoragePath(path: String?) {
