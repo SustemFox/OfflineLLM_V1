@@ -31,6 +31,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -50,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.offlinellm.data.local.AppLogger
 import com.example.offlinellm.domain.model.DownloadState
@@ -71,13 +73,18 @@ fun SettingsScreen(
     onSetStoragePath: (String?) -> Unit = {},
     onResetStoragePath: () -> Unit = {},
     onToggleTheme: () -> Unit = {},
+    onSetLogsEnabled: (Boolean) -> Unit = {},
+    onSetLogsPanelExpanded: (Boolean) -> Unit = {},
+    onHfTokenChange: (String) -> Unit = {},
+    onHfUrlChange: (String) -> Unit = {},
+    onDownloadHfUrl: () -> Unit = {},
+    onClearChat: () -> Unit = {},
+    onAccelPref: (String) -> Unit = {},
 ) {
     val folderPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
-        if (uri != null) {
-            onSetStoragePath(uri.toString())
-        }
+        if (uri != null) onSetStoragePath(uri.toString())
     }
 
     Scaffold(
@@ -104,23 +111,15 @@ fun SettingsScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item(key = "title_spacer") {
-                Spacer(modifier = Modifier.height(4.dp))
-            }
+            item(key = "title_spacer") { Spacer(modifier = Modifier.height(4.dp)) }
 
-            // HTTP Server
             item(key = "http_server") {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "HTTP Сервер (хостинг)",
-                            style = MaterialTheme.typography.titleMedium
-                        )
+                        Text("HTTP Сервер (хостинг)", style = MaterialTheme.typography.titleMedium)
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -131,51 +130,35 @@ fun SettingsScreen(
                                 Text(
                                     text = if (state.isServerRunning) "Сервер запущен" else "Сервер остановлен",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = if (state.isServerRunning)
-                                        MaterialTheme.colorScheme.primary
-                                    else
-                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (state.isServerRunning) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                if (state.isServerRunning) {
-                                    Text(
-                                        text = "http://<телефон>:${state.serverPort ?: 8080}/v1",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                } else {
-                                    Text(
-                                        text = "OpenAI-compatible API для Kai / curl",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
+                                Text(
+                                    text = if (state.isServerRunning)
+                                        "http://<телефон>:${state.serverPort ?: 8080}/v1"
+                                    else
+                                        "OpenAI-compatible API для Kai / curl",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
-                            Switch(
-                                checked = state.isServerRunning,
-                                onCheckedChange = onToggleServer
-                            )
+                            Switch(checked = state.isServerRunning, onCheckedChange = onToggleServer)
                         }
                     }
                 }
             }
 
-            // Backend
             item(key = "backend") {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(text = "Бэкенд", style = MaterialTheme.typography.titleMedium)
+                        Text(text = "Бэкенд / ускорители", style = MaterialTheme.typography.titleMedium)
                         Spacer(modifier = Modifier.height(8.dp))
+                        Text("Активно: ${state.activeBackend.ifBlank { "—" }}", style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            text = "Ускоритель: ${state.activeBackend.ifBlank { "—" }}",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            text = "Модель: ${state.selectedModel?.name ?: "не выбрана"}",
+                            "Модель: ${state.selectedModel?.name ?: "не выбрана"}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -183,101 +166,100 @@ fun SettingsScreen(
                             text = when {
                                 state.isLoading -> "Статус: загрузка модели…"
                                 state.isRealEngine -> "Статус: llama.cpp (real)"
-                                else -> "Статус: demo / fake (выбери скачанную модель)"
+                                else -> "Статус: demo / fake"
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        if (state.isNativeAvailable) {
-                            Text(
-                                text = "Native libs: OK",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        } else {
-                            Text(
-                                text = "Native libs: недоступны на этом устройстве/ABI",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
+                        Text(
+                            text = if (state.isNativeAvailable) "Native libs: OK" else "Native libs: недоступны",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (state.isNativeAvailable) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Предпочтение:", style = MaterialTheme.typography.bodySmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("auto" to "Auto", "cpu" to "CPU", "vulkan" to "Vulkan").forEach { (id, label) ->
+                                FilterChip(
+                                    selected = state.accelPref == id,
+                                    onClick = { onAccelPref(id) },
+                                    label = { Text(label) }
+                                )
+                            }
                         }
+                        Text(
+                            "Vulkan сработает только если backend собран в APK; иначе CPU.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
 
-            // Theme
             item(key = "theme") {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(text = "Тема", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                text = if (state.isDarkMode) "Тёмная" else "Светлая",
+                                text = if (state.isDarkMode) "Тёмная (сохраняется)" else "Светлая (сохраняется)",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Switch(
-                            checked = state.isDarkMode,
-                            onCheckedChange = { onToggleTheme() }
-                        )
+                        Switch(checked = state.isDarkMode, onCheckedChange = { onToggleTheme() })
                     }
                 }
             }
 
-            // Storage
+            item(key = "history") {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("История чата", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Сообщения сохраняются локально и восстанавливаются после перезапуска.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(onClick = onClearChat, modifier = Modifier.fillMaxWidth()) {
+                            Text("Очистить историю")
+                        }
+                    }
+                }
+            }
+
             item(key = "storage") {
                 var showPathInput by remember { mutableStateOf(false) }
                 var pathText by remember { mutableStateOf("") }
-
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Хранилище моделей",
-                            style = MaterialTheme.typography.titleMedium
-                        )
+                        Text("Хранилище моделей", style = MaterialTheme.typography.titleMedium)
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = state.storagePath.ifBlank { "—" },
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+                        Text(state.storagePath.ifBlank { "—" }, style = MaterialTheme.typography.bodyMedium)
                         Spacer(modifier = Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = { folderPicker.launch(null) },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(
-                                    Icons.Default.FolderOpen,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { folderPicker.launch(null) }, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.Default.FolderOpen, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
                                 Text("Папка")
                             }
-                            OutlinedButton(
-                                onClick = { showPathInput = !showPathInput },
-                                modifier = Modifier.weight(1f)
-                            ) {
+                            OutlinedButton(onClick = { showPathInput = !showPathInput }, modifier = Modifier.weight(1f)) {
                                 Text("Путь")
                             }
                         }
@@ -286,17 +268,13 @@ fun SettingsScreen(
                             onClick = onResetStoragePath,
                             modifier = Modifier.fillMaxWidth(),
                             enabled = state.hasCustomStorage
-                        ) {
-                            Text("Сбросить на внутреннюю память")
-                        }
-
+                        ) { Text("Сбросить на внутреннюю память") }
                         if (showPathInput) {
                             Spacer(modifier = Modifier.height(8.dp))
                             OutlinedTextField(
                                 value = pathText,
                                 onValueChange = { pathText = it },
                                 label = { Text("Путь к папке") },
-                                placeholder = { Text("/sdcard/OfflineLLM/models") },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true
                             )
@@ -309,47 +287,66 @@ fun SettingsScreen(
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Применить")
-                            }
+                            ) { Text("Применить") }
                         }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "GGUF можно класть вручную в эту папку или скачать из списка ниже.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
             }
 
-            // Global download banner
+            item(key = "hf") {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Hugging Face", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Ссылка вида https://huggingface.co/.../resolve/main/*.gguf — скачивание идёт в фоне.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = state.hfUrlInput,
+                            onValueChange = onHfUrlChange,
+                            label = { Text("URL .gguf") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = state.hfToken,
+                            onValueChange = onHfTokenChange,
+                            label = { Text("HF token (опционально, для gated)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = onDownloadHfUrl,
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = state.downloadState !is DownloadState.InProgress
+                        ) { Text("Скачать с Hugging Face") }
+                    }
+                }
+            }
+
             item(key = "download_banner") {
                 when (val ds = state.downloadState) {
                     is DownloadState.InProgress -> {
-                        val name = state.availableModels
-                            .firstOrNull { it.id == state.downloadingModelId }
-                            ?.name
-                            ?: state.selectedModel?.name
-                            ?: "модель"
+                        val name = state.availableModels.firstOrNull { it.id == state.downloadingModelId }?.name
+                            ?: state.selectedModel?.name ?: "модель"
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer
-                            )
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
-                                Text(
-                                    text = "Скачивание: $name",
-                                    style = MaterialTheme.typography.titleSmall
-                                )
+                                Text("Скачивание (фон): $name", style = MaterialTheme.typography.titleSmall)
                                 Spacer(modifier = Modifier.height(8.dp))
                                 if (ds.progress > 0f) {
-                                    LinearProgressIndicator(
-                                        progress = ds.progress.coerceIn(0f, 1f),
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
+                                    LinearProgressIndicator(progress = ds.progress.coerceIn(0f, 1f), modifier = Modifier.fillMaxWidth())
                                 } else {
                                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                                 }
@@ -360,15 +357,10 @@ fun SettingsScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = if (ds.progress > 0f)
-                                            "${(ds.progress * 100).toInt()}%"
-                                        else
-                                            "Подключение / размер неизвестен…",
+                                        if (ds.progress > 0f) "${(ds.progress * 100).toInt()}%" else "Подключение…",
                                         style = MaterialTheme.typography.bodySmall
                                     )
-                                    OutlinedButton(onClick = onCancelDownload) {
-                                        Text("Отмена")
-                                    }
+                                    OutlinedButton(onClick = onCancelDownload) { Text("Отмена") }
                                 }
                             }
                         }
@@ -376,12 +368,10 @@ fun SettingsScreen(
                     is DownloadState.Failed -> {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer
-                            )
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
                         ) {
                             Text(
-                                text = "Ошибка загрузки: ${ds.reason}",
+                                "Ошибка загрузки: ${ds.reason}",
                                 modifier = Modifier.padding(16.dp),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onErrorContainer
@@ -391,12 +381,10 @@ fun SettingsScreen(
                     is DownloadState.Completed -> {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer
-                            )
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
                         ) {
                             Text(
-                                text = "✅ Модель готова. Нажми «Выбрать», чтобы загрузить в движок.",
+                                "✅ Модель готова. Нажми «Выбрать».",
                                 modifier = Modifier.padding(16.dp),
                                 style = MaterialTheme.typography.bodyMedium
                             )
@@ -406,14 +394,13 @@ fun SettingsScreen(
                 }
             }
 
-            // Logs
             item(key = "logs") {
-                var expanded by remember { mutableStateOf(false) }
                 var logText by remember { mutableStateOf("") }
                 val localCtx = LocalContext.current
+                val expanded = state.logsPanelExpanded
 
-                LaunchedEffect(expanded) {
-                    if (expanded) {
+                LaunchedEffect(expanded, state.logsEnabled) {
+                    if (expanded && state.logsEnabled) {
                         while (true) {
                             logText = AppLogger.getLogText()
                             delay(2000)
@@ -423,9 +410,7 @@ fun SettingsScreen(
 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(
@@ -433,45 +418,57 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = "📋 Логи", style = MaterialTheme.typography.titleMedium)
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                Text("📋 Логи", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    if (state.logsEnabled) "Запись включена (сохраняется)" else "Запись выключена (сохраняется)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = state.logsEnabled,
+                                onCheckedChange = onSetLogsEnabled
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Показать панель", style = MaterialTheme.typography.bodyMedium)
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 if (expanded) {
                                     IconButton(onClick = {
                                         AppLogger.clear()
                                         logText = ""
                                     }) {
-                                        Icon(
-                                            Icons.Default.Delete,
-                                            contentDescription = "Очистить",
-                                            modifier = Modifier.size(20.dp)
-                                        )
+                                        Icon(Icons.Default.Delete, "Очистить", Modifier.size(20.dp))
                                     }
                                     IconButton(onClick = { logText = AppLogger.getLogText() }) {
-                                        Icon(
-                                            Icons.Default.Refresh,
-                                            contentDescription = "Обновить",
-                                            modifier = Modifier.size(20.dp)
-                                        )
+                                        Icon(Icons.Default.Refresh, "Обновить", Modifier.size(20.dp))
                                     }
                                 }
                                 Switch(
                                     checked = expanded,
-                                    onCheckedChange = { expanded = it }
+                                    onCheckedChange = onSetLogsPanelExpanded
                                 )
                             }
                         }
                         if (expanded) {
                             Spacer(modifier = Modifier.height(8.dp))
-                            Button(
-                                onClick = { AppLogger.copyToClipboard(localCtx) },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
+                            Button(onClick = { AppLogger.copyToClipboard(localCtx) }, modifier = Modifier.fillMaxWidth()) {
                                 Text("📋 Копировать логи")
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             SelectionContainer {
                                 Text(
-                                    text = logText.ifEmpty { "Логов пока нет" },
+                                    text = when {
+                                        !state.logsEnabled -> "Логирование выключено"
+                                        logText.isEmpty() -> "Логов пока нет"
+                                        else -> logText
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -485,35 +482,23 @@ fun SettingsScreen(
                 }
             }
 
-            // Models header
             item(key = "models_header") {
-                Text(
-                    text = "Модели",
-                    style = MaterialTheme.typography.titleMedium
-                )
+                Text("Модели", style = MaterialTheme.typography.titleMedium)
             }
 
             if (state.isLoading && state.availableModels.isEmpty()) {
                 item(key = "models_loading") {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
+                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator()
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Spacer(Modifier.height(8.dp))
                             Text("Загрузка списка моделей…")
                         }
                     }
                 }
             }
 
-            items(
-                items = state.availableModels,
-                key = { it.id }
-            ) { model ->
+            items(items = state.availableModels, key = { it.id }) { model ->
                 ModelCard(
                     model = model,
                     isActive = model.id == state.selectedModel?.id && state.isRealEngine,
@@ -529,14 +514,9 @@ fun SettingsScreen(
             }
 
             item(key = "refresh_btn") {
-                Spacer(modifier = Modifier.height(4.dp))
-                Button(
-                    onClick = onRefresh,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Обновить список")
-                }
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(Modifier.height(4.dp))
+                Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("Обновить список") }
+                Spacer(Modifier.height(24.dp))
             }
         }
     }
@@ -556,16 +536,12 @@ private fun ModelCard(
     onCancel: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    val isDownloadingThis =
-        downloadState is DownloadState.InProgress && downloadingModelId == model.id
-    val downloadProgress =
-        (downloadState as? DownloadState.InProgress)?.progress ?: 0f
+    val isDownloadingThis = downloadState is DownloadState.InProgress && downloadingModelId == model.id
+    val downloadProgress = (downloadState as? DownloadState.InProgress)?.progress ?: 0f
     val anyDownloadInProgress = downloadState is DownloadState.InProgress
 
     Card(
-        onClick = {
-            if (model.isDownloaded) onSelect()
-        },
+        onClick = { if (model.isDownloaded) onSelect() },
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = when {
@@ -576,109 +552,54 @@ private fun ModelCard(
         )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = model.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.weight(1f)
-                )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(model.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 when {
-                    isActive -> Badge(containerColor = MaterialTheme.colorScheme.primary) {
-                        Text("В движке")
-                    }
-                    model.isDownloaded -> Badge {
-                        Text("Скачана")
-                    }
+                    isActive -> Badge(containerColor = MaterialTheme.colorScheme.primary) { Text("В движке") }
+                    model.isDownloaded -> Badge { Text("Скачана") }
                 }
             }
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
-                text = "${model.sizeFormatted} · ${model.quantType} · ${model.parameterCount}",
+                "${model.sizeFormatted} · ${model.quantType} · ${model.parameterCount}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-
             if (isDownloadingThis) {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(Modifier.height(8.dp))
                 if (downloadProgress > 0f) {
-                    LinearProgressIndicator(
-                        progress = downloadProgress.coerceIn(0f, 1f),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                } else {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (downloadProgress <= 0f) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            strokeWidth = 2.dp
-                        )
-                    }
-                    Text(
-                        text = if (downloadProgress > 0f)
-                            "Загрузка… ${(downloadProgress * 100).toInt()}%"
-                        else
-                            "Подключение…",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-
-            if (engineLoading) {
-                Spacer(modifier = Modifier.height(8.dp))
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    LinearProgressIndicator(progress = downloadProgress.coerceIn(0f, 1f), modifier = Modifier.fillMaxWidth())
+                } else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 Text(
-                    text = "Загрузка в llama.cpp…",
+                    if (downloadProgress > 0f) "Загрузка… ${(downloadProgress * 100).toInt()}%" else "Подключение…",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary
                 )
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
+            if (engineLoading) {
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text("Загрузка в llama.cpp…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
+            Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (model.isDownloaded) {
-                    Button(
-                        onClick = onSelect,
-                        modifier = Modifier.weight(1f),
-                        enabled = !engineLoading && !anyDownloadInProgress
-                    ) {
+                    Button(onClick = onSelect, modifier = Modifier.weight(1f), enabled = !engineLoading && !anyDownloadInProgress) {
                         Text(if (isActive) "Активна" else "Выбрать")
                     }
                     OutlinedButton(
                         onClick = onDelete,
                         enabled = !isDownloadingThis && !engineLoading,
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Text("Удалить")
-                    }
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) { Text("Удалить") }
                 } else if (isDownloadingThis) {
-                    OutlinedButton(
-                        onClick = onCancel,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Отменить")
-                    }
+                    OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Отменить") }
                 } else {
                     Button(
                         onClick = onDownload,
                         modifier = Modifier.weight(1f),
                         enabled = !anyDownloadInProgress && model.downloadUrl.isNotBlank()
-                    ) {
-                        Text("Скачать")
-                    }
+                    ) { Text("Скачать") }
                 }
             }
         }
