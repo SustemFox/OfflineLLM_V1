@@ -1,23 +1,21 @@
 # OfflineLLM_V1
 
-Android offline LLM (llama.cpp) + OpenAI-compatible local HTTP API.
+Android offline LLM via **llama.cpp** (CPU JNI build) + optional OpenAI-compatible HTTP on `:8080`.
 
-## Features
-- On-device inference: Vulkan / OpenCL / CPU (`arm64-v8a`)
-- Download GGUF models with progress + cancel
-- Shared models folder (SAF / custom path)
-- Chat UI (Jetpack Compose)
-- Optional HTTP server on `:8080` (`/v1/models`, `/v1/chat/completions`)
+## v1.1 notes
+Legacy prebuilt `jniLibs` (Vulkan/OpenCL) were **broken** (corrupt ELF / no JNI).  
+CI now builds **CPU-only** `libofflinellm_jni.so` from upstream [llama.cpp](https://github.com/ggml-org/llama.cpp).
 
-## Build
+## Build (CI)
+Push to `main` or run workflow **Build OfflineLLM APK**.  
+Artifact: `OfflineLLM-v1.1-cpu`.
+
+Local (needs NDK + llama.cpp clone):
 ```bash
+git clone --depth 1 https://github.com/ggml-org/llama.cpp.git app/src/main/cpp/third_party/llama.cpp
 ./gradlew :app:assembleRelease
 ```
-APK: `app/build/outputs/apk/release/app-release.apk`
-
-Or use GitHub Actions workflow **Build OfflineLLM APK**.
 
 ## Docs
-- [PLAN.md](PLAN.md) — architecture
-- [STATUS.md](STATUS.md) — current status
-- [TODO.md](TODO.md) — backlog (partially stale)
+- [PLAN.md](PLAN.md)
+- [STATUS.md](STATUS.md)
