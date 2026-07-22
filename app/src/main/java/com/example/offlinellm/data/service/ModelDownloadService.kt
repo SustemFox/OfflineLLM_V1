@@ -86,29 +86,37 @@ class ModelDownloadService : Service() {
 
         val repo = ModelRepositoryImpl(applicationContext)
         job = scope.launch {
+            var failed = false
+            var failMsg: String? = null
             try {
                 AppLogger.d("DlService", "start $modelId")
                 broadcast(STATUS_RUNNING, modelId, 0f, null)
                 repo.downloadModel(modelId, url)
                     .catch { e ->
+                        failed = true
+                        failMsg = e.message
                         AppLogger.e("DlService", "fail: ${e.message}", e)
                         broadcast(STATUS_FAILED, modelId, 0f, e.message)
                         notifyDone(name, success = false, err = e.message)
                     }
                     .collect { p ->
                         val pct = (p * 100).toInt().coerceIn(0, 100)
-                        // Throttle notification binder calls — was a major slowdown
                         val now = System.currentTimeMillis()
-                        if (now - lastNotifMs >= NOTIF_INTERVAL_MS || pct != lastNotifPct && pct % 2 == 0) {
+                        if (now - lastNotifMs >= NOTIF_INTERVAL_MS || (pct != lastNotifPct && pct % 2 == 0)) {
                             updateNotification(name, pct, indeterminate = p <= 0f)
                             lastNotifMs = now
                             lastNotifPct = pct
                         }
                         broadcast(STATUS_PROGRESS, modelId, p, null)
                     }
-                broadcast(STATUS_COMPLETED, modelId, 1f, null)
-                notifyDone(name, success = true, err = null)
-                AppLogger.d("DlService", "done $modelId")
+                // Flow.catch swallows errors — only mark success if catch did not run
+                if (!failed) {
+                    broadcast(STATUS_COMPLETED, modelId, 1f, null)
+                    notifyDone(name, success = true, err = null)
+                    AppLogger.d("DlService", "done $modelId")
+                } else {
+                    AppLogger.d("DlService", "ended with failure $modelId: $failMsg")
+                }
             } catch (t: Throwable) {
                 AppLogger.e("DlService", "exception: ${t.message}", t)
                 broadcast(STATUS_FAILED, modelId, 0f, t.message)
