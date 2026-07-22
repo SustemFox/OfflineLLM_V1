@@ -5,9 +5,11 @@ import com.example.offlinellm.data.local.AppLogger
 import com.example.offlinellm.data.local.AppPreferences
 import com.example.offlinellm.domain.repository.LlmRepository
 import com.example.offlinellm.llama.LlamaInferenceEngine
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 
 class LocalLlmRepository(
     private val context: Context,
@@ -32,12 +34,6 @@ class LocalLlmRepository(
     val backendInfo: String
         get() = engine.activeBackend
 
-    fun ensureReady() {
-        if (loaded) return
-        runBlocking { engine.load() }
-        loaded = true
-    }
-
     fun applySamplingFromPrefs() {
         engine.updateSampling(
             maxTokens = AppPreferences.getMaxTokens(context),
@@ -48,9 +44,11 @@ class LocalLlmRepository(
         )
     }
 
-    private fun loadEngine() {
+    private suspend fun loadEngine() {
         if (!loaded) {
-            runBlocking { engine.load() }
+            withContext(Dispatchers.IO) {
+                engine.load()
+            }
             loaded = true
         }
         applySamplingFromPrefs()
@@ -59,10 +57,11 @@ class LocalLlmRepository(
     override suspend fun generateResponse(prompt: String): Flow<String> {
         return try {
             loadEngine()
+            // Stream stays on background; UI layer throttles Main updates
             engine.generateStream(
                 prompt = prompt,
                 systemPrompt = loadSystemPrompt()
-            )
+            ).flowOn(Dispatchers.IO)
         } catch (t: Throwable) {
             AppLogger.e("LocalLlm", "generateResponse setup failed: ${t.message}", t)
             flow { throw t }
