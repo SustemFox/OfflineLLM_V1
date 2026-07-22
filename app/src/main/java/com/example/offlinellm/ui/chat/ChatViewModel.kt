@@ -1,28 +1,34 @@
 package com.example.offlinellm.ui.chat
 
 import android.app.Application
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.offlinellm.data.local.AppLogger
+import com.example.offlinellm.data.local.AppPreferences
+import com.example.offlinellm.data.local.ChatHistoryStore
 import com.example.offlinellm.data.local.ModelsDirectoryManager
 import com.example.offlinellm.data.service.LlmHttpServer
+import com.example.offlinellm.data.service.ModelDownloadService
 import com.example.offlinellm.di.AppProvider
 import com.example.offlinellm.domain.model.DownloadState
 import com.example.offlinellm.domain.model.LlmModel
 import com.example.offlinellm.domain.model.Message
+import com.example.offlinellm.llama.ModelLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.onCompletion
-import kotlinx.coroutines.flow.onStart
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -34,14 +40,91 @@ class ChatViewModel(
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
     private var httpServer: LlmHttpServer? = null
-    private var downloadJob: Job? = null
+    private var saveJob: Job? = null
+
+    private val downloadReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != ModelDownloadService.ACTION_PROGRESS) return
+            val status = intent.getStringExtra(ModelDownloadService.EXTRA_STATUS) ?: return
+            val modelId = intent.getStringExtra(ModelDownloadService.EXTRA_MODEL_ID)
+            val progress = intent.getFloatExtra(ModelDownloadService.EXTRA_PROGRESS, 0f)
+            val error = intent.getStringExtra(ModelDownloadService.EXTRA_ERROR)
+            when (status) {
+                ModelDownloadService.STATUS_RUNNING,
+                ModelDownloadService.STATUS_PROGRESS -> {
+                    _uiState.value = _uiState.value.copy(
+                        downloadingModelId = modelId,
+                        downloadState = DownloadState.InProgress(progress.coerceIn(0f, 0.999f))
+                    )
+                }
+                ModelDownloadService.STATUS_COMPLETED -> {
+                    _uiState.value = _uiState.value.copy(
+                        downloadState = DownloadState.Completed,
+                        downloadingModelId = null
+                    )
+                    addMessage(
+                        Message(
+                            text = "✅ Модель скачана (фон). Нажми «Выбрать», чтобы загрузить в движок.",
+                            sender = Message.Sender.SYSTEM
+                        )
+                    )
+                    loadModels()
+                }
+                ModelDownloadService.STATUS_FAILED -> {
+                    _uiState.value = _uiState.value.copy(
+                        downloadState = DownloadState.Failed(error ?: "Download failed"),
+                        downloadingModelId = null
+                    )
+                    addMessage(
+                        Message(
+                            text = "Ошибка скачивания: ${error ?: "unknown"}",
+                            sender = Message.Sender.SYSTEM
+                        )
+                    )
+                    loadModels()
+                }
+            }
+        }
+    }
 
     init {
         AppProvider.initFake(application)
+        AppLogger.setEnabled(AppPreferences.isLogsEnabled(application))
+
+        val welcome = Message(
+            text = "Привет! Я твой оффлайн-помощник.\n" +
+                "📱 Движок: llama.cpp\n" +
+                "⚡ Ускорение: CPU (+ Vulkan если собран)\n" +
+                "🌐 HTTP-сервер: вкл/выкл в настройках\n" +
+                "⬇️ Скачивание работает в фоне (уведомление)\n" +
+                "1) ⚙ → скачай модель (список или HF URL)\n" +
+                "2) Нажми «Выбрать»\n" +
+                "3) Пиши в чат",
+            sender = Message.Sender.SYSTEM
+        )
+        val history = ChatHistoryStore.load(application)
+        val messages = if (history.isEmpty()) listOf(welcome) else history
+
         _uiState.value = _uiState.value.copy(
+            messages = messages,
+            isDarkMode = AppPreferences.isDarkMode(application),
+            logsEnabled = AppPreferences.isLogsEnabled(application),
+            logsPanelExpanded = AppPreferences.isLogsPanelExpanded(application),
+            hfToken = AppPreferences.getHfToken(application),
+            hfUrlInput = AppPreferences.getLastHfUrl(application),
+            accelPref = AppPreferences.getAccelPref(application),
             storagePath = ModelsDirectoryManager.getStorageLabel(application),
             hasCustomStorage = ModelsDirectoryManager.hasCustomPath(application)
         )
+
+        val filter = IntentFilter(ModelDownloadService.ACTION_PROGRESS)
+        if (Build.VERSION.SDK_INT >= 33) {
+            application.registerReceiver(downloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            application.registerReceiver(downloadReceiver, filter)
+        }
+
         loadModels()
     }
 
@@ -52,9 +135,7 @@ class ChatViewModel(
             } catch (e: Exception) {
                 AppLogger.e("ChatVM", "refreshModels failed: ${e.message}", e)
             }
-            withContext(Dispatchers.Main) {
-                applyModelsFromRepo()
-            }
+            withContext(Dispatchers.Main) { applyModelsFromRepo() }
         }
     }
 
@@ -65,9 +146,7 @@ class ChatViewModel(
             } catch (e: Exception) {
                 AppLogger.e("ChatVM", "loadModels failed: ${e.message}", e)
             }
-            withContext(Dispatchers.Main) {
-                applyModelsFromRepo()
-            }
+            withContext(Dispatchers.Main) { applyModelsFromRepo() }
         }
     }
 
@@ -82,7 +161,8 @@ class ChatViewModel(
         } catch (_: Throwable) {
             "CPU"
         }
-        val currentId = _uiState.value.selectedModel?.id
+        val prefId = AppPreferences.getSelectedModelId(application)
+        val currentId = _uiState.value.selectedModel?.id ?: prefId
         val selected = models.firstOrNull { it.id == currentId }
             ?: models.firstOrNull { it.isDownloaded }
             ?: models.firstOrNull()
@@ -101,7 +181,6 @@ class ChatViewModel(
                 withContext(Dispatchers.IO) {
                     AppProvider.initRealEngine(application, modelPath)
                 }
-                // Restart HTTP server with real generate if it was running
                 val wasRunning = _uiState.value.isServerRunning
                 val port = _uiState.value.serverPort ?: 8080
                 if (wasRunning) {
@@ -161,7 +240,6 @@ class ChatViewModel(
         viewModelScope.launch {
             var assistantMessage: Message? = null
             AppProvider.llmRepository.generateResponse(prompt)
-                .onStart { _uiState.value = _uiState.value.copy(isGenerating = true) }
                 .catch { error ->
                     addMessage(
                         Message(
@@ -170,8 +248,8 @@ class ChatViewModel(
                         )
                     )
                 }
-                .onCompletion { _uiState.value = _uiState.value.copy(isGenerating = false) }
                 .collect { partialText ->
+                    _uiState.value = _uiState.value.copy(isGenerating = true)
                     if (assistantMessage == null) {
                         assistantMessage = Message(text = partialText, sender = Message.Sender.LLM)
                         addMessage(assistantMessage!!)
@@ -180,6 +258,8 @@ class ChatViewModel(
                         updateLastMessage(assistantMessage!!)
                     }
                 }
+            _uiState.value = _uiState.value.copy(isGenerating = false)
+            scheduleSaveHistory()
         }
     }
 
@@ -221,7 +301,6 @@ class ChatViewModel(
                             sender = Message.Sender.SYSTEM
                         )
                     )
-                    // Fall back to fake so UI stays usable
                     try {
                         AppProvider.initFake(application)
                         _uiState.value = _uiState.value.copy(isRealEngine = false)
@@ -231,6 +310,7 @@ class ChatViewModel(
             } finally {
                 withContext(Dispatchers.Main) {
                     _uiState.value = _uiState.value.copy(isGenerating = false)
+                    scheduleSaveHistory()
                 }
             }
         }
@@ -247,14 +327,9 @@ class ChatViewModel(
                     },
                     modelId = { _uiState.value.selectedModel?.id ?: "local-model" }
                 )
-                withContext(Dispatchers.IO) {
-                    server.start()
-                }
+                withContext(Dispatchers.IO) { server.start() }
                 httpServer = server
-                _uiState.value = _uiState.value.copy(
-                    isServerRunning = true,
-                    serverPort = port
-                )
+                _uiState.value = _uiState.value.copy(isServerRunning = true, serverPort = port)
                 addMessage(
                     Message(
                         text = "🌐 HTTP-сервер на порту $port (/v1/chat/completions).",
@@ -290,15 +365,68 @@ class ChatViewModel(
     }
 
     fun toggleTheme() {
-        _uiState.value = _uiState.value.copy(isDarkMode = !_uiState.value.isDarkMode)
+        val next = !_uiState.value.isDarkMode
+        AppPreferences.setDarkMode(application, next)
+        _uiState.value = _uiState.value.copy(isDarkMode = next)
     }
 
-    fun setPrimaryColor(color: Color) {
-        _uiState.value = _uiState.value.copy(primaryColor = color)
+    fun setLogsEnabled(enabled: Boolean) {
+        AppPreferences.setLogsEnabled(application, enabled)
+        _uiState.value = _uiState.value.copy(logsEnabled = enabled)
+    }
+
+    fun setLogsPanelExpanded(expanded: Boolean) {
+        AppPreferences.setLogsPanelExpanded(application, expanded)
+        _uiState.value = _uiState.value.copy(logsPanelExpanded = expanded)
+    }
+
+    fun setHfToken(token: String) {
+        AppPreferences.setHfToken(application, token)
+        _uiState.value = _uiState.value.copy(hfToken = token)
+    }
+
+    fun setHfUrlInput(url: String) {
+        _uiState.value = _uiState.value.copy(hfUrlInput = url)
+    }
+
+    fun setAccelPref(pref: String) {
+        AppPreferences.setAccelPref(application, pref)
+        _uiState.value = _uiState.value.copy(accelPref = pref)
+        addMessage(
+            Message(
+                text = "Предпочтение ускорителя: $pref (применится при следующей загрузке модели; Vulkan только если собран в APK).",
+                sender = Message.Sender.SYSTEM
+            )
+        )
+    }
+
+    fun downloadFromHfUrl() {
+        val url = _uiState.value.hfUrlInput.trim()
+        if (url.isBlank()) {
+            addMessage(Message(text = "Вставь Hugging Face URL (.gguf resolve/main/...).", sender = Message.Sender.SYSTEM))
+            return
+        }
+        if (!url.contains("http", ignoreCase = true)) {
+            addMessage(Message(text = "Некорректный URL.", sender = Message.Sender.SYSTEM))
+            return
+        }
+        AppPreferences.setLastHfUrl(application, url)
+        val info = ModelLoader.modelInfoFromUrl(url)
+        val model = LlmModel(
+            id = info.id,
+            name = info.name,
+            sizeBytes = info.fileSizeBytes,
+            downloadUrl = info.downloadUrl,
+            isDownloaded = false,
+            quantType = info.quantType,
+            parameterCount = info.parameterCount
+        )
+        downloadModel(model)
     }
 
     fun selectModel(model: LlmModel) {
         _uiState.value = _uiState.value.copy(selectedModel = model)
+        AppPreferences.setSelectedModelId(application, model.id)
         if (!model.isDownloaded) {
             addMessage(
                 Message(
@@ -338,13 +466,13 @@ class ChatViewModel(
         if (model.downloadUrl.isBlank()) {
             addMessage(
                 Message(
-                    text = "У «${model.name}» нет URL для скачивания. Положи .gguf вручную в папку моделей.",
+                    text = "У «${model.name}» нет URL. Вставь HF URL ниже или положи .gguf вручную.",
                     sender = Message.Sender.SYSTEM
                 )
             )
             return
         }
-        if (downloadJob?.isActive == true) {
+        if (_uiState.value.downloadState is DownloadState.InProgress) {
             addMessage(
                 Message(
                     text = "Уже идёт скачивание. Дождись окончания или нажми «Отмена».",
@@ -359,88 +487,43 @@ class ChatViewModel(
             downloadingModelId = model.id,
             downloadState = DownloadState.InProgress(0f)
         )
-
-        AppLogger.d("ChatVM", "downloadModel: ${model.id} from ${model.downloadUrl}")
-        downloadJob = viewModelScope.launch {
-            try {
-                AppProvider.modelRepository.downloadModel(model.id, model.downloadUrl)
-                    .flowOn(Dispatchers.IO)
-                    .onStart {
-                        AppLogger.d("ChatVM", "Download starting for ${model.id}")
-                    }
-                    .catch { error ->
-                        if (!isActive) return@catch
-                        AppLogger.e("ChatVM", "Download FAILED: ${model.id} - ${error.message}", error)
-                        _uiState.value = _uiState.value.copy(
-                            downloadState = DownloadState.Failed(
-                                error.localizedMessage ?: error.message ?: "Download failed"
-                            ),
-                            downloadingModelId = null
-                        )
-                    }
-                    .collect { progress ->
-                        if (!isActive) return@collect
-                        val completed = progress >= 0.999f
-                        if (completed) {
-                            _uiState.value = _uiState.value.copy(
-                                downloadState = DownloadState.Completed,
-                                downloadingModelId = null
-                            )
-                            AppLogger.d("ChatVM", "Download COMPLETED: ${model.id}")
-                            addMessage(
-                                Message(
-                                    text = "✅ Модель ${model.name} скачана! Нажми «Выбрать», чтобы загрузить в движок.",
-                                    sender = Message.Sender.SYSTEM
-                                )
-                            )
-                        } else {
-                            _uiState.value = _uiState.value.copy(
-                                downloadState = DownloadState.InProgress(progress.coerceIn(0f, 1f)),
-                                downloadingModelId = model.id
-                            )
-                        }
-                    }
-            } catch (e: Exception) {
-                if (isActive) {
-                    AppLogger.e("ChatVM", "Download exception: ${e.message}", e)
-                    _uiState.value = _uiState.value.copy(
-                        downloadState = DownloadState.Failed(e.message ?: "Download failed"),
-                        downloadingModelId = null
-                    )
-                }
-            } finally {
-                loadModels()
-            }
+        AppLogger.d("ChatVM", "downloadModel FGS: ${model.id} from ${model.downloadUrl}")
+        try {
+            ModelDownloadService.start(
+                application,
+                modelId = model.id,
+                url = model.downloadUrl,
+                name = model.name
+            )
+            addMessage(
+                Message(
+                    text = "⬇️ Скачивание «${model.name}» запущено в фоне. Можно свернуть приложение — прогресс в уведомлении.",
+                    sender = Message.Sender.SYSTEM
+                )
+            )
+        } catch (t: Throwable) {
+            AppLogger.e("ChatVM", "FGS start failed: ${t.message}", t)
+            _uiState.value = _uiState.value.copy(
+                downloadState = DownloadState.Failed(t.message ?: "Cannot start download service"),
+                downloadingModelId = null
+            )
         }
     }
 
     fun cancelDownload() {
         val id = _uiState.value.downloadingModelId
         AppLogger.d("ChatVM", "cancelDownload: $id")
-        downloadJob?.cancel()
-        downloadJob = null
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                if (id != null) {
-                    AppProvider.modelRepository.cancelDownload(id)
-                }
-            } catch (e: Exception) {
-                AppLogger.e("ChatVM", "cancelDownload cleanup: ${e.message}", e)
-            }
-            withContext(Dispatchers.Main) {
-                _uiState.value = _uiState.value.copy(
-                    downloadState = DownloadState.Idle,
-                    downloadingModelId = null
-                )
-                addMessage(
-                    Message(
-                        text = "Скачивание отменено.",
-                        sender = Message.Sender.SYSTEM
-                    )
-                )
-                loadModels()
-            }
+        ModelDownloadService.cancel(application, id)
+        try {
+            if (id != null) AppProvider.modelRepository.cancelDownload(id)
+        } catch (_: Throwable) {
         }
+        _uiState.value = _uiState.value.copy(
+            downloadState = DownloadState.Idle,
+            downloadingModelId = null
+        )
+        addMessage(Message(text = "Скачивание отменено.", sender = Message.Sender.SYSTEM))
+        loadModels()
     }
 
     fun clearDownloadState() {
@@ -465,17 +548,12 @@ class ChatViewModel(
                 )
             } else {
                 addMessage(
-                    Message(
-                        text = "Сначала скачай и выбери модель.",
-                        sender = Message.Sender.SYSTEM
-                    )
+                    Message(text = "Сначала скачай и выбери модель.", sender = Message.Sender.SYSTEM)
                 )
             }
         } else {
             stopHttpServer()
-            addMessage(
-                Message(text = "HTTP-сервер остановлен.", sender = Message.Sender.SYSTEM)
-            )
+            addMessage(Message(text = "HTTP-сервер остановлен.", sender = Message.Sender.SYSTEM))
         }
     }
 
@@ -486,16 +564,12 @@ class ChatViewModel(
                     AppProvider.modelRepository.deleteModel(model.id)
                 }
                 if (_uiState.value.selectedModel?.id == model.id) {
-                    // If real engine was using it, fall back to fake
                     AppProvider.initFake(application)
                     stopHttpServer()
                     _uiState.value = _uiState.value.copy(isRealEngine = false)
                 }
                 addMessage(
-                    Message(
-                        text = "🗑 Модель ${model.name} удалена.",
-                        sender = Message.Sender.SYSTEM
-                    )
+                    Message(text = "🗑 Модель ${model.name} удалена.", sender = Message.Sender.SYSTEM)
                 )
                 loadModels()
             } catch (e: Exception) {
@@ -511,13 +585,16 @@ class ChatViewModel(
     }
 
     fun clearChat() {
+        ChatHistoryStore.clear(application)
         _uiState.value = _uiState.value.copy(
-            messages = listOf(Message(text = "Chat cleared.", sender = Message.Sender.SYSTEM))
+            messages = listOf(Message(text = "История очищена.", sender = Message.Sender.SYSTEM))
         )
+        scheduleSaveHistory()
     }
 
     private fun addMessage(message: Message) {
         _uiState.value = _uiState.value.copy(messages = _uiState.value.messages + message)
+        scheduleSaveHistory()
     }
 
     private fun updateLastMessage(message: Message) {
@@ -526,21 +603,19 @@ class ChatViewModel(
             messages[messages.lastIndex] = message
             _uiState.value = _uiState.value.copy(messages = messages)
         }
+        scheduleSaveHistory()
+    }
+
+    private fun scheduleSaveHistory() {
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(400)
+            ChatHistoryStore.save(application, _uiState.value.messages)
+        }
     }
 
     data class ChatUiState(
-        val messages: List<Message> = listOf(
-            Message(
-                text = "Привет! Я твой оффлайн-помощник.\n" +
-                    "📱 Движок: llama.cpp\n" +
-                    "⚡ Ускорение: Vulkan GPU / OpenCL / CPU\n" +
-                    "🌐 HTTP-сервер: вкл/выкл в настройках\n" +
-                    "1) ⚙ → скачай модель\n" +
-                    "2) Нажми «Выбрать»\n" +
-                    "3) Пиши в чат",
-                sender = Message.Sender.SYSTEM
-            )
-        ),
+        val messages: List<Message> = emptyList(),
         val inputText: String = "",
         val isGenerating: Boolean = false,
         val isLoading: Boolean = false,
@@ -556,7 +631,12 @@ class ChatViewModel(
         val downloadState: DownloadState = DownloadState.Idle,
         val activeBackend: String = "CPU",
         val storagePath: String = "",
-        val hasCustomStorage: Boolean = false
+        val hasCustomStorage: Boolean = false,
+        val logsEnabled: Boolean = true,
+        val logsPanelExpanded: Boolean = false,
+        val hfToken: String = "",
+        val hfUrlInput: String = "",
+        val accelPref: String = "auto"
     )
 
     fun setCustomStoragePath(path: String?) {
@@ -601,7 +681,13 @@ class ChatViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        downloadJob?.cancel()
+        try {
+            application.unregisterReceiver(downloadReceiver)
+        } catch (_: Throwable) {
+        }
+        saveJob?.cancel()
+        ChatHistoryStore.save(application, _uiState.value.messages)
+        // Do NOT cancel download service on VM clear — it should keep running in background
         stopHttpServer()
     }
 
