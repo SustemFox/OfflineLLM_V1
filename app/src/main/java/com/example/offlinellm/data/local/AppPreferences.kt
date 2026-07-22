@@ -29,10 +29,8 @@ object AppPreferences {
     private const val KEY_N_GPU_LAYERS = "llm_n_gpu_layers"
 
     const val DEFAULT_SYSTEM_PROMPT =
-        "Ты — локальный оффлайн-ассистент на телефоне. Отвечай кратко, по делу, на языке пользователя. " +
-            "Не используй XML/HTML-теги (в том числе think/thinking). " +
-            "Не повторяй один абзац или фразу. Не уходи в посторонние темы (колл-центр и т.п.), " +
-            "если пользователь об этом не просил. Данные никуда не отправляются."
+        "Ты краткий оффлайн-помощник. Ответь на языке пользователя одним-двумя короткими абзацами. " +
+            "Не повторяй текст. Без XML/think-тегов и без ролевых игр."
 
     private fun p(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -95,21 +93,21 @@ object AppPreferences {
     }
 
     fun getTemperature(ctx: Context): Float =
-        p(ctx).getFloat(KEY_TEMPERATURE, 0.7f)
+        p(ctx).getFloat(KEY_TEMPERATURE, 0.65f)
 
     fun setTemperature(ctx: Context, v: Float) {
         p(ctx).edit().putFloat(KEY_TEMPERATURE, v.coerceIn(0.01f, 2f)).apply()
     }
 
     fun getTopP(ctx: Context): Float =
-        p(ctx).getFloat(KEY_TOP_P, 0.9f)
+        p(ctx).getFloat(KEY_TOP_P, 0.85f)
 
     fun setTopP(ctx: Context, v: Float) {
         p(ctx).edit().putFloat(KEY_TOP_P, v.coerceIn(0.05f, 1f)).apply()
     }
 
     fun getMaxTokens(ctx: Context): Int =
-        p(ctx).getInt(KEY_MAX_TOKENS, 256).coerceIn(16, 4096)
+        p(ctx).getInt(KEY_MAX_TOKENS, 128).coerceIn(16, 4096)
 
     fun setMaxTokens(ctx: Context, v: Int) {
         p(ctx).edit().putInt(KEY_MAX_TOKENS, v.coerceIn(16, 4096)).apply()
@@ -157,14 +155,14 @@ object AppPreferences {
     }
 
     fun getRepeatPenalty(ctx: Context): Float =
-        p(ctx).getFloat(KEY_REPEAT_PENALTY, 1.15f)
+        p(ctx).getFloat(KEY_REPEAT_PENALTY, 1.28f)
 
     fun setRepeatPenalty(ctx: Context, v: Float) {
         p(ctx).edit().putFloat(KEY_REPEAT_PENALTY, v.coerceIn(1.0f, 2.0f)).apply()
     }
 
     fun getFrequencyPenalty(ctx: Context): Float =
-        p(ctx).getFloat(KEY_FREQ_PENALTY, 0.15f)
+        p(ctx).getFloat(KEY_FREQ_PENALTY, 0.35f)
 
     fun setFrequencyPenalty(ctx: Context, v: Float) {
         p(ctx).edit().putFloat(KEY_FREQ_PENALTY, v.coerceIn(0f, 1f)).apply()
