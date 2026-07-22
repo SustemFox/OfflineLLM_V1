@@ -2,6 +2,8 @@ package com.example.offlinellm.ui.chat
 
 import androidx.compose.ui.graphics.Color
 import com.example.offlinellm.domain.model.DownloadState
+import com.example.offlinellm.data.remote.HfGgufFile
+import com.example.offlinellm.data.remote.HfModelHit
 import com.example.offlinellm.domain.model.LlmModel
 import com.example.offlinellm.domain.model.Message
 
@@ -34,6 +36,14 @@ data class ChatUiState(
     val logsPanelExpanded: Boolean = false,
     val hfToken: String = "",
     val hfUrlInput: String = "",
+    val hfSearchQuery: String = "Qwen3.5 GGUF",
+    val hfSearchLoading: Boolean = false,
+    val hfSearchError: String? = null,
+    val hfSearchResults: List<HfModelHit> = emptyList(),
+    val hfSelectedRepo: String? = null,
+    val hfFilesLoading: Boolean = false,
+    val hfFiles: List<HfGgufFile> = emptyList(),
+    val hfShowManualUrl: Boolean = false,
     val accelPref: String = "auto",
     val temperature: Float = 0.7f,
     val topP: Float = 0.9f,
