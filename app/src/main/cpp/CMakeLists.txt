@@ -6,17 +6,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
 
-# Prefer pre-cloned tree (optional); otherwise FetchContent pulls llama.cpp
 set(LLAMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp)
 if (EXISTS "${LLAMA_DIR}/CMakeLists.txt")
     message(STATUS "Using local llama.cpp at ${LLAMA_DIR}")
     set(LLAMA_SRC ${LLAMA_DIR})
 else()
-    message(STATUS "Fetching llama.cpp via FetchContent")
+    message(STATUS "Fetching llama.cpp b5250 (stable-ish pin)")
     FetchContent_Declare(
         llama_cpp
         GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git
-        GIT_TAG        master
+        GIT_TAG        b5250
         GIT_SHALLOW    TRUE
     )
     FetchContent_GetProperties(llama_cpp)
@@ -44,9 +43,7 @@ set(GGML_CCACHE OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(${LLAMA_SRC} llama_build EXCLUDE_FROM_ALL)
 
-add_library(offlinellm_jni SHARED
-    offlinellm_jni.cpp
-)
+add_library(offlinellm_jni SHARED offlinellm_jni.cpp)
 
 target_include_directories(offlinellm_jni PRIVATE
     ${LLAMA_SRC}/include
