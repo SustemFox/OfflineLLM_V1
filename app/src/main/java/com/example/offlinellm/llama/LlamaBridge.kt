@@ -2,12 +2,6 @@ package com.example.offlinellm.llama
 
 import com.example.offlinellm.data.local.AppLogger
 
-/**
- * JNI bridge to native llama.cpp (libofflinellm_jni.so + ggml/llama).
- *
- * Load order is CPU-first. Optional GPU backends are attempted only if present
- * and never abort the CPU path. Never throws to callers — returns false on failure.
- */
 object LlamaBridge {
 
     @Volatile
@@ -23,19 +17,13 @@ object LlamaBridge {
     val lastError: String? get() = loadError
     val backendName: String get() = backendLabel
 
-    /**
-     * Load native libraries. Safe to call repeatedly.
-     * @return true if JNI + core llama stack is ready
-     */
     @Synchronized
     fun load(): Boolean {
         if (loaded) return true
         loadError = null
 
-        // Prefer the single JNI shared lib built by CI (links ggml/llama statically or dynamically).
         val attempts = listOf(
             listOf("offlinellm_jni"),
-            // Fallback: staged load of split prebuilts (legacy layout)
             listOf("ggml-base", "ggml-cpu", "ggml", "llama", "offlinellm_jni"),
             listOf("ggml-base", "ggml-cpu", "llama", "offlinellm_jni"),
         )
@@ -64,13 +52,11 @@ object LlamaBridge {
     }
 
     private fun tryLoadSequence(libs: List<String>): String? {
-        // Optional accelerators — ignore failures (corrupt vulkan etc.)
         for (opt in listOf("ggml-hexagon", "ggml-htp-v75", "ggml-htp-v73", "ggml-vulkan", "ggml-opencl")) {
             try {
                 System.loadLibrary(opt)
                 AppLogger.d("LlamaBridge", "optional loaded: $opt")
             } catch (_: Throwable) {
-                // ignore
             }
         }
         for (name in libs) {
@@ -81,7 +67,6 @@ object LlamaBridge {
                 return "lib$name: ${t.message}"
             }
         }
-        // Probe a JNI method exists
         return try {
             getBackendInfo()
             null
@@ -99,7 +84,6 @@ object LlamaBridge {
         }
     }
 
-    // --- JNI (implemented in offlinellm_jni) ---
     @JvmStatic external fun createContext(
         modelPath: String,
         nCtx: Int,
@@ -113,7 +97,9 @@ object LlamaBridge {
         systemPrompt: String,
         maxTokens: Int,
         temperature: Float,
-        topP: Float
+        topP: Float,
+        repeatPenalty: Float,
+        frequencyPenalty: Float
     ): String
 
     @JvmStatic external fun runInferenceStream(
@@ -123,6 +109,8 @@ object LlamaBridge {
         maxTokens: Int,
         temperature: Float,
         topP: Float,
+        repeatPenalty: Float,
+        frequencyPenalty: Float,
         callback: TokenCallback
     )
 
