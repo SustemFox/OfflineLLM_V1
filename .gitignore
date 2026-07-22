@@ -7,3 +7,6 @@ local.properties
 build_out.txt
 build_err.txt
 tmp_gen.py
+
+# llama.cpp source fetched by CI
+app/src/main/cpp/third_party/
