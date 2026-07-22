@@ -81,6 +81,7 @@ fun AppRoot() {
                     onShowThinking = { viewModel.setShowThinking(it) },
                     onRepeatPenalty = { viewModel.setRepeatPenalty(it) },
                     onFrequencyPenalty = { viewModel.setFrequencyPenalty(it) },
+                    onNGpuLayers = { viewModel.setNGpuLayers(it) },
                 )
             }
         }
