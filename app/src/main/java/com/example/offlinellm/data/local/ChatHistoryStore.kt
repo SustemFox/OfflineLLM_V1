@@ -6,9 +6,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/**
- * Persist chat messages to app filesDir as JSON.
- */
 object ChatHistoryStore {
     private const val FILE = "chat_history.json"
     private const val MAX_MESSAGES = 400
@@ -31,7 +28,8 @@ object ChatHistoryStore {
                             id = o.optString("id", java.util.UUID.randomUUID().toString()),
                             text = o.optString("text"),
                             sender = sender,
-                            timestamp = o.optLong("timestamp", System.currentTimeMillis())
+                            timestamp = o.optLong("timestamp", System.currentTimeMillis()),
+                            thinking = o.optString("thinking", "").ifBlank { null }
                         )
                     )
                 }
@@ -44,18 +42,16 @@ object ChatHistoryStore {
 
     fun save(context: Context, messages: List<Message>) {
         try {
-            val trimmed = if (messages.size > MAX_MESSAGES) {
-                messages.takeLast(MAX_MESSAGES)
-            } else messages
+            val trimmed = if (messages.size > MAX_MESSAGES) messages.takeLast(MAX_MESSAGES) else messages
             val arr = JSONArray()
             for (m in trimmed) {
-                arr.put(
-                    JSONObject()
-                        .put("id", m.id)
-                        .put("text", m.text)
-                        .put("sender", m.sender.name)
-                        .put("timestamp", m.timestamp)
-                )
+                val o = JSONObject()
+                    .put("id", m.id)
+                    .put("text", m.text)
+                    .put("sender", m.sender.name)
+                    .put("timestamp", m.timestamp)
+                if (!m.thinking.isNullOrBlank()) o.put("thinking", m.thinking)
+                arr.put(o)
             }
             File(context.filesDir, FILE).writeText(arr.toString())
         } catch (t: Throwable) {
