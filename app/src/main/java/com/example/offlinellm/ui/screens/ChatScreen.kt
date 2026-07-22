@@ -45,9 +45,16 @@ fun ChatScreen(
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
-    LaunchedEffect(state.messages.size, state.isGenerating, state.messages.lastOrNull()?.text) {
+    // Only key on size + generating flag — not every token text (was janking main during stream)
+    LaunchedEffect(state.messages.size, state.isGenerating) {
         if (state.messages.isNotEmpty()) {
             listState.animateScrollToItem(state.messages.lastIndex)
+        }
+    }
+    // Occasional scroll while streaming without animating every char
+    LaunchedEffect(state.isGenerating, state.messages.lastOrNull()?.text?.length?.div(64)) {
+        if (state.isGenerating && state.messages.isNotEmpty()) {
+            listState.scrollToItem(state.messages.lastIndex)
         }
     }
 
