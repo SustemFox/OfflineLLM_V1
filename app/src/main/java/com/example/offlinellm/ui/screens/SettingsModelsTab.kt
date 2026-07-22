@@ -2,7 +2,9 @@ package com.example.offlinellm.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,14 +18,20 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -75,19 +83,11 @@ internal fun ModelsTab(
             }
         }
 
-        item(key = "hf") {
+        item(key = "hf_search") {
             SettingsCard(
-                title = "Hugging Face",
-                subtitle = "Прямой URL .gguf (можно свернуть — фоновая загрузка)"
+                title = "Поиск на Hugging Face",
+                subtitle = "GGUF-репозитории → файл → скачать. Токен не ускоряет CDN, но помогает при лимитах/gated."
             ) {
-                OutlinedTextField(
-                    value = state.hfUrlInput,
-                    onValueChange = cb.onHfUrlChange,
-                    label = { Text("URL .gguf") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = state.hfToken,
                     onValueChange = cb.onHfTokenChange,
@@ -97,12 +97,108 @@ internal fun ModelsTab(
                     visualTransformation = PasswordVisualTransformation()
                 )
                 Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = cb.onDownloadHfUrl,
+                OutlinedTextField(
+                    value = state.hfSearchQuery,
+                    onValueChange = cb.onHfSearchQueryChange,
+                    label = { Text("Поиск (напр. Qwen3.5, Llama 3.2)") },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = state.downloadState !is DownloadState.InProgress
+                    singleLine = true
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = cb.onHfSearch,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !state.hfSearchLoading &&
+                        state.downloadState !is DownloadState.InProgress
                 ) {
-                    Text("Скачать с HF")
+                    if (state.hfSearchLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Ищем…")
+                    } else {
+                        Icon(Icons.Default.Search, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Найти GGUF")
+                    }
+                }
+                if (state.hfSearchError != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        state.hfSearchError!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                if (state.hfSelectedRepo != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "📦 ${state.hfSelectedRepo}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = cb.onHfClearSelection) { Text("Сбросить") }
+                    }
+                    if (state.hfFilesLoading) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Text("Список .gguf…", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+
+        if (state.hfSelectedRepo == null && state.hfSearchResults.isNotEmpty()) {
+            item { Text("Репозитории", style = MaterialTheme.typography.titleSmall) }
+            items(state.hfSearchResults, key = { it.repoId }) { hit ->
+                HfPickCard(
+                    title = hit.repoId,
+                    subtitle = "↓ ${hit.downloads} · ❤ ${hit.likes}" +
+                        (if (hit.pipelineTag.isNotBlank()) " · ${hit.pipelineTag}" else ""),
+                    onClick = { cb.onHfSelectRepo(hit.repoId) }
+                )
+            }
+        }
+
+        if (state.hfSelectedRepo != null && state.hfFiles.isNotEmpty()) {
+            item { Text("Файлы .gguf (Q4 сверху)", style = MaterialTheme.typography.titleSmall) }
+            items(state.hfFiles, key = { it.path }) { f ->
+                HfPickCard(
+                    title = f.fileName,
+                    subtitle = "${f.sizeLabel} · ${f.path}",
+                    enabled = state.downloadState !is DownloadState.InProgress,
+                    onClick = { cb.onHfDownloadFile(f) }
+                )
+            }
+        }
+
+        item(key = "hf_manual") {
+            TextButton(onClick = cb.onHfToggleManualUrl) {
+                Text(if (state.hfShowManualUrl) "Скрыть ручной URL" else "Ручной URL .gguf")
+            }
+            if (state.hfShowManualUrl) {
+                SettingsCard(title = "Прямая ссылка") {
+                    OutlinedTextField(
+                        value = state.hfUrlInput,
+                        onValueChange = cb.onHfUrlChange,
+                        label = { Text("URL .gguf") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = cb.onDownloadHfUrl,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = state.downloadState !is DownloadState.InProgress
+                    ) {
+                        Text("Скачать по URL")
+                    }
                 }
             }
         }
@@ -137,9 +233,7 @@ internal fun ModelsTab(
             }
         }
 
-        item {
-            Text("Каталог моделей", style = MaterialTheme.typography.titleMedium)
-        }
+        item { Text("Каталог моделей", style = MaterialTheme.typography.titleMedium) }
 
         items(state.availableModels, key = { it.id }) { model ->
             ModelCard(
@@ -161,6 +255,37 @@ internal fun ModelsTab(
                 Text("Обновить список")
             }
             Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun HfPickCard(
+    title: String,
+    subtitle: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (enabled) {
+                Text(
+                    "Нажми →",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
     }
 }
