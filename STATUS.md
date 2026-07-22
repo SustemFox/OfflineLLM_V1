@@ -1,31 +1,32 @@
 # OfflineLLM_V1 — Статус
 
-> Ветка: `main`
-> Фокус: **CPU native + JNI** (битый Vulkan prebuilt удалён)
+> Ветка: `main` @ `a2493c25`
+> CI: ✅ [run 29888533328](https://github.com/SustemFox/OfflineLLM_V1/actions/runs/29888533328)
+> Artifact: **OfflineLLM-v1.0** (~4.6 MB) — CPU llama.cpp JNI
 
-## Проблема (2026-07-22)
-- Краш на Send: `IllegalStateException: Failed to load native llama.cpp libraries`
-- Root cause:
-  1. `libggml-vulkan.so` corrupt (`invalid shdr offset/size`)
-  2. `libggml.so` / `libllama.so` **DT_NEEDED** → vulkan (нельзя просто «не грузить»)
-  3. В prebuilt `.so` **нет JNI symbols** (`Java_com_example_...`) — даже валидный load не дал бы `createContext`
+## Что было сломано (crash on Send)
+1. Prebuilt `libggml-vulkan.so` — corrupt ELF (`invalid shdr offset/size`)
+2. `libggml.so` / `libllama.so` **DT_NEEDED** → vulkan (нельзя «просто не грузить»)
+3. В prebuilt `.so` **не было JNI** (`Java_com_example_...`) — `createContext` никогда не мог работать
 
-## Fix
-- Kotlin: безопасный `LlamaBridge.load()`, CPU defaults, ошибки на Send/Select не роняют процесс
-- Удалены legacy jniLibs из packaging / CI wipe
-- Добавлены `app/src/main/cpp` + CMake: сборка **llama.cpp CPU-only** + `libofflinellm_jni.so`
-- CI клонирует llama.cpp и собирает APK artifact `OfflineLLM-v1.1-cpu`
+## Fix (v1.1 CPU path)
+- Удалены legacy `jniLibs/arm64-v8a/*.so`
+- Добавлены `app/src/main/cpp` + CMake: **llama.cpp b5250 CPU-only** → `libofflinellm_jni.so`
+- Gradle `cloneLlamaCpp` (workflow править App не может — 403)
+- Kotlin: безопасный `LlamaBridge.load()`, `nGpuLayers=0`, catch на Select/Send, `ensureReady` при выборе модели
+- Backend label: `CPU (llama.cpp)`
 
 ## Ускорение
 | Backend | Статус |
 |---|---|
-| CPU NEON | ✅ целевой путь v1.1 |
-| Vulkan | ❌ prebuilt битый; нужна отдельная валидная пересборка |
-| OpenCL | ❌ отключён (зависит от vendor libOpenCL) |
-| Hexagon NPU | ❌ .so нет в репо |
+| CPU | ✅ рабочий путь |
+| Vulkan / OpenCL / Hexagon | ❌ не в этой сборке (нужны валидные prebuilts + отдельный build) |
 
-## Как пользоваться
-1. Actions → artifact **OfflineLLM-v1.1-cpu**
-2. Установить APK
-3. Скачать маленькую GGUF (Qwen 0.5B/1.5B Q4)
+## Как поставить
+1. GitHub → Actions → run **29888533328** → artifact **OfflineLLM-v1.0**
+2. Установить APK (debug-signed release)
+3. Скачать небольшую GGUF (Qwen 0.5B/1.5B Q4)
 4. «Выбрать» → дождаться load → Send
+
+## Если native всё ещё fail
+В чате будет system message с текстом ошибки (без process crash), UI останется в demo/fake.
