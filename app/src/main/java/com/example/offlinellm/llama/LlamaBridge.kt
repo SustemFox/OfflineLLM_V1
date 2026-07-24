@@ -126,6 +126,8 @@ object LlamaBridge {
 
     @JvmStatic external fun isOpenClBuilt(): Boolean
 
+    @JvmStatic external fun isVulkanBuilt(): Boolean
+
     @JvmStatic external fun getLoadedGpuLayers(contextPtr: Long): Int
 
     @JvmStatic external fun benchmark(contextPtr: Long, pp: Int, tg: Int): String
