@@ -51,11 +51,28 @@ class LlamaInferenceEngine(
             "createContext path=$modelPath nCtx=$nCtx gpuLayers=$nGpuLayers threads=$threads " +
                 "temp=$temperature topP=$topP maxTok=$maxTokens repPen=$repeatPenalty"
         )
-        contextPtr = LlamaBridge.createContext(modelPath, nCtx, nGpuLayers, threads)
+        var usedNgl = nGpuLayers
+        contextPtr = LlamaBridge.createContext(modelPath, nCtx, usedNgl, threads)
+        // JNI already retries CPU after GPU failure; keep a Kotlin-side belt if ptr still 0
+        if (contextPtr == 0L && usedNgl != 0) {
+            AppLogger.e("Engine", "createContext failed with ngl=$usedNgl — retry CPU ngl=0")
+            usedNgl = 0
+            nGpuLayers = 0
+            contextPtr = LlamaBridge.createContext(modelPath, nCtx, 0, threads)
+        }
         if (contextPtr == 0L) {
             throw IllegalStateException("Failed to create llama context for $modelPath")
         }
-        AppLogger.d("Engine", "context ready ptr=$contextPtr backend=${LlamaBridge.backendName}")
+        val loadedNgl = try {
+            LlamaBridge.getLoadedGpuLayers(contextPtr)
+        } catch (_: Throwable) {
+            usedNgl
+        }
+        nGpuLayers = loadedNgl
+        AppLogger.d(
+            "Engine",
+            "context ready ptr=$contextPtr ngl=$loadedNgl backend=${LlamaBridge.backendName}"
+        )
     }
 
     suspend fun generate(
@@ -84,7 +101,14 @@ class LlamaInferenceEngine(
                     )
                     return@callbackFlow
                 }
-                contextPtr = LlamaBridge.createContext(modelPath, nCtx, nGpuLayers, threads)
+                var usedNgl = nGpuLayers
+                contextPtr = LlamaBridge.createContext(modelPath, nCtx, usedNgl, threads)
+                if (contextPtr == 0L && usedNgl != 0) {
+                    AppLogger.e("Engine", "stream createContext GPU fail — CPU retry")
+                    usedNgl = 0
+                    nGpuLayers = 0
+                    contextPtr = LlamaBridge.createContext(modelPath, nCtx, 0, threads)
+                }
                 if (contextPtr == 0L) {
                     close(IllegalStateException("Failed to create llama context for $modelPath"))
                     return@callbackFlow
