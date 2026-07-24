@@ -119,14 +119,14 @@ object AppPreferences {
     }
 
     fun getMaxTokens(ctx: Context): Int =
-        p(ctx).getInt(KEY_MAX_TOKENS, 128).coerceIn(16, 4096)
+        p(ctx).getInt(KEY_MAX_TOKENS, 256).coerceIn(16, 4096)
 
     fun setMaxTokens(ctx: Context, v: Int) {
         p(ctx).edit().putInt(KEY_MAX_TOKENS, v.coerceIn(16, 4096)).apply()
     }
 
     fun getNCtx(ctx: Context): Int =
-        p(ctx).getInt(KEY_N_CTX, 2048).coerceIn(512, 8192)
+        p(ctx).getInt(KEY_N_CTX, 4096).coerceIn(512, 8192)
 
     fun setNCtx(ctx: Context, v: Int) {
         p(ctx).edit().putInt(KEY_N_CTX, v.coerceIn(512, 8192)).apply()
