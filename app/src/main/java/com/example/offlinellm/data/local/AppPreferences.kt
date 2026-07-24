@@ -175,13 +175,18 @@ object AppPreferences {
         p(ctx).edit().putInt(KEY_N_GPU_LAYERS, v.coerceIn(0, 999)).apply()
     }
 
-    /** Resolve effective n_gpu_layers from accel pref + slider. */
+    /**
+     * Resolve effective n_gpu_layers from accel pref + slider.
+     *
+     * "auto" stays on **CPU** (ngl=0): on many Adreno devices (e.g. SD855 / OP7)
+     * ggml-Vulkan can SIGSEGV inside libvulkan CreateFence and kill the process —
+     * that is not catchable from Kotlin. User must explicitly pick OpenCL/Vulkan.
+     */
     fun resolveNGpuLayers(ctx: Context): Int {
         return when (getAccelPref(ctx)) {
-            "cpu" -> 0
-            // OpenCL / Vulkan / auto: honor slider (0 = force CPU layers)
-            "opencl", "vulkan", "auto" -> getNGpuLayers(ctx)
-            else -> getNGpuLayers(ctx)
+            "cpu", "auto" -> 0
+            "opencl", "vulkan" -> getNGpuLayers(ctx).coerceAtLeast(0)
+            else -> 0
         }
     }
 }
