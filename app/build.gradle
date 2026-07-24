@@ -27,7 +27,9 @@ android {
                           '-DGGML_NATIVE=OFF',
                           '-DOFFLINELLM_LLAMA_TAG=b10079',
                           '-DOFFLINELLM_ENABLE_OPENCL=ON',
-                          '-DOFFLINELLM_ENABLE_VULKAN=ON'
+                          '-DOFFLINELLM_ENABLE_VULKAN=ON',
+                          "-DSPIRV-Headers_DIR=${projectDir}/src/main/cpp/third_party/vulkan-host/spirv-headers/share/cmake/SPIRV-Headers",
+                          "-DCMAKE_PREFIX_PATH=${projectDir}/src/main/cpp/third_party/vulkan-host/spirv-headers" 
             }
         }
     }
