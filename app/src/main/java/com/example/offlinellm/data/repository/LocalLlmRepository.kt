@@ -58,13 +58,17 @@ class LocalLlmRepository(
         applySamplingFromPrefs()
     }
 
-    override suspend fun generateResponse(prompt: String): Flow<String> {
+    override suspend fun generateResponse(
+        prompt: String,
+        systemPrompt: String?
+    ): Flow<String> {
         return try {
             loadEngine()
+            val sys = systemPrompt?.takeIf { it.isNotBlank() } ?: loadSystemPrompt()
             // Stream stays on background; UI layer throttles Main updates
             engine.generateStream(
                 prompt = prompt,
-                systemPrompt = loadSystemPrompt()
+                systemPrompt = sys
             ).flowOn(Dispatchers.IO)
         } catch (t: Throwable) {
             AppLogger.e("LocalLlm", "generateResponse setup failed: ${t.message}", t)
@@ -80,6 +84,12 @@ class LocalLlmRepository(
         if (loaded) {
             engine.release()
             loaded = false
+        } else {
+            // Still release native ptr if load failed mid-way / edge cases
+            try {
+                engine.release()
+            } catch (_: Throwable) {
+            }
         }
     }
 }
