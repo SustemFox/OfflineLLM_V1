@@ -68,7 +68,8 @@ data class ChatCompletionResponse(
 
 class LlmHttpServer(
     private val port: Int = 8080,
-    private val generate: suspend (String) -> Flow<String> = { emptyFlow() },
+    private val generate: suspend (userPrompt: String, systemPrompt: String) -> Flow<String> =
+        { _, _ -> emptyFlow() },
     private val modelId: () -> String = { "unknown" }
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -95,9 +96,9 @@ class LlmHttpServer(
                 post("/v1/chat/completions") {
                     val text = call.receiveText()
                     val req = jsonEngine.decodeFromString<ChatCompletionRequest>(text)
-                    val prompt = req.messages.joinToString("\n") { "${it.role}: ${it.content}" }
+                    val (userPrompt, systemPrompt) = splitMessages(req.messages)
                     val result = buildString {
-                        val flow = generate(prompt)
+                        val flow = generate(userPrompt, systemPrompt)
                         flow.collect { append(it) }
                     }
                     val response = ChatCompletionResponse(
@@ -116,5 +117,31 @@ class LlmHttpServer(
     fun stop() {
         server?.stop(1000, 2000)
         scope.cancel()
+    }
+
+    companion object {
+        /**
+         * OpenAI-style messages → engine (user + system) for ChatML.
+         * system roles become systemPrompt; everything else is the user/dialogue prompt.
+         */
+        fun splitMessages(messages: List<ChatMessage>): Pair<String, String> {
+            val systems = ArrayList<String>()
+            val rest = ArrayList<ChatMessage>()
+            for (m in messages) {
+                if (m.role.equals("system", ignoreCase = true)) {
+                    if (m.content.isNotBlank()) systems.add(m.content)
+                } else {
+                    rest.add(m)
+                }
+            }
+            val systemPrompt = systems.joinToString("\n").trim()
+            val userPrompt = when {
+                rest.isEmpty() -> ""
+                rest.size == 1 && rest[0].role.equals("user", ignoreCase = true) ->
+                    rest[0].content
+                else -> rest.joinToString("\n") { "${it.role}: ${it.content}" }
+            }
+            return userPrompt to systemPrompt
+        }
     }
 }
