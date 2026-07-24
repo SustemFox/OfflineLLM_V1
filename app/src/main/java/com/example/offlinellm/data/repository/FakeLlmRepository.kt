@@ -16,7 +16,10 @@ class FakeLlmRepository : LlmRepository {
         "Пока я не загружен реальной моделью, я отвечаю заготовками, но архитектура готова."
     )
 
-    override suspend fun generateResponse(prompt: String): Flow<String> = flow {
+    override suspend fun generateResponse(
+        prompt: String,
+        systemPrompt: String?
+    ): Flow<String> = flow {
         val response = responses.random()
         val words = response.split(" ")
         var emitted = ""
