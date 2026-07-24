@@ -8,7 +8,7 @@ Android app for running GGUF language models **on-device** (llama.cpp), with opt
 - Chat UI (Compose)
 - llama.cpp native engine (CPU, experimental OpenCL + Vulkan)
 - SAF storage for models
-- Local HTTP API (LAN IP + configurable port)
+- Local OpenAI-compatible HTTP API (`/v1/models`, `/v1/chat/completions`, SSE `stream`, `/health`)
 - LLM settings: temperature, top-p, penalties, context, threads, system prompt
 
 ## Requirements
