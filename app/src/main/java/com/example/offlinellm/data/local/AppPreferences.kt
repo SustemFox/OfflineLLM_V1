@@ -197,7 +197,8 @@ object AppPreferences {
     fun resolveNGpuLayers(ctx: Context): Int {
         return when (getAccelPref(ctx)) {
             "cpu", "auto" -> 0
-            "opencl", "vulkan" -> getNGpuLayers(ctx).coerceAtLeast(0)
+            "opencl" -> getNGpuLayers(ctx).coerceAtLeast(0)
+            "vulkan" -> 0 // disabled: process-killing SEGV on many Adreno GPUs
             else -> 0
         }
     }
