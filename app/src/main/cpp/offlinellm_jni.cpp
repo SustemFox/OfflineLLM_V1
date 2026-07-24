@@ -24,6 +24,8 @@
 #define OFFLINELLM_OPENCL_BUILT 0
 #endif
 
+static std::once_flag g_backend_once;
+
 struct ContextHandle {
     llama_model * model = nullptr;
     llama_context * ctx = nullptr;
@@ -119,7 +121,7 @@ Java_com_example_offlinellm_llama_LlamaBridge_createContext(
           path.c_str(), (int)n_ctx, (int)n_gpu_layers, (int)n_threads,
           OFFLINELLM_LLAMA_TAG, OFFLINELLM_OPENCL_BUILT);
 
-    llama_backend_init();
+    std::call_once(g_backend_once, []() { llama_backend_init(); });
 
     int want_ngl = (int)n_gpu_layers;
 #if !OFFLINELLM_OPENCL_BUILT
@@ -143,16 +145,23 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_example_offlinellm_llama_LlamaBridge_releaseContext(JNIEnv *, jclass, jlong ptr) {
     if (!ptr) return;
     auto * handle = reinterpret_cast<ContextHandle *>(ptr);
-    std::lock_guard<std::mutex> lock(handle->mu);
-    if (handle->ctx) {
-        llama_free(handle->ctx);
+    llama_context * ctx = nullptr;
+    llama_model * model = nullptr;
+    {
+        // Never destroy the mutex while holding lock_guard on it
+        std::lock_guard<std::mutex> lock(handle->mu);
+        ctx = handle->ctx;
+        model = handle->model;
         handle->ctx = nullptr;
-    }
-    if (handle->model) {
-        llama_model_free(handle->model);
         handle->model = nullptr;
+        handle->vocab = nullptr;
     }
-    handle->vocab = nullptr;
+    if (ctx) {
+        llama_free(ctx);
+    }
+    if (model) {
+        llama_model_free(model);
+    }
     delete handle;
 }
 
