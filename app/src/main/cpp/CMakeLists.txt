@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22.1)
 # Vulkan disabled by default: ggml-Vulkan SIGSEGVs in libvulkan CreateFence on
 # Adreno 640 (OnePlus 7 / SD855) during createContext — kills the process.
 # Signal handlers cannot reliably recover. Re-enable only for devices known-good:
-#   -DOFFLINELLM_ENABLE_VULKAN=ON -DGGML_VULKAN=OFF
+#   -DOFFLINELLM_ENABLE_VULKAN=ON  (not for OP7/Adreno 640)
 if (NOT DEFINED OFFLINELLM_ENABLE_VULKAN)
     set(OFFLINELLM_ENABLE_VULKAN OFF CACHE BOOL "Build experimental Vulkan backend")
 endif()
@@ -14,6 +14,13 @@ if (NOT OFFLINELLM_ENABLE_VULKAN)
 endif()
 
 project(offlinellm_jni)
+
+# FORCE Vulkan off after project (override polluted CMakeCache)
+set(OFFLINELLM_ENABLE_VULKAN OFF CACHE BOOL "Vulkan" FORCE)
+set(GGML_VULKAN OFF CACHE BOOL "ggml Vulkan" FORCE)
+set(OFFLINELLM_VULKAN_BUILT 0)
+message(STATUS "FORCE Vulkan off after project")
+
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
