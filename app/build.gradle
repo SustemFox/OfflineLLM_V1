@@ -227,6 +227,39 @@ tasks.register('buildOpenClIcd') {
 
 // --- Vulkan host tools (glslc + SPIRV-Headers) for GGML_VULKAN shader codegen ---
 def vulkanHost = file("${thirdParty}/vulkan-host")
+
+// Vulkan-Hpp headers (NDK only ships C vulkan.h, ggml-vulkan needs vulkan.hpp)
+def vulkanHeadersSrc = file("${thirdParty}/Vulkan-Headers")
+def vulkanHeadersInc = file("${vulkanHost}/include")
+
+tasks.register('cloneVulkanHeaders', Exec) {
+    outputs.dir(vulkanHeadersSrc)
+    onlyIf { !new File(vulkanHeadersSrc, 'include/vulkan/vulkan.hpp').exists() }
+    workingDir = thirdParty
+    doFirst { workingDir.mkdirs() }
+    commandLine 'git', 'clone', '--depth', '1',
+            'https://github.com/KhronosGroup/Vulkan-Headers.git', 'Vulkan-Headers'
+}
+
+tasks.register('stageVulkanHpp') {
+    dependsOn 'cloneVulkanHeaders'
+    def marker = file("${vulkanHeadersInc}/vulkan/.staged")
+    outputs.file(marker)
+    doLast {
+        def src = file("${vulkanHeadersSrc}/include")
+        if (!new File(src, 'vulkan/vulkan.hpp').exists()) {
+            throw new GradleException("Vulkan-Headers missing vulkan.hpp at ${src}")
+        }
+        copy {
+            from src
+            into vulkanHeadersInc
+        }
+        marker.parentFile.mkdirs()
+        marker.text = "ok\n"
+        println "Vulkan-Hpp staged -> ${vulkanHeadersInc}"
+    }
+}
+
 def spirvHeadersSrc = file("${thirdParty}/SPIRV-Headers")
 def spirvHeadersPrefix = file("${vulkanHost}/spirv-headers")
 
@@ -301,7 +334,7 @@ tasks.register('stageGlslc') {
 }
 
 tasks.register('stageVulkanHostDeps') {
-    dependsOn 'installSpirvHeaders', 'stageGlslc'
+    dependsOn 'installSpirvHeaders', 'stageGlslc', 'stageVulkanHpp'
 }
 
 
