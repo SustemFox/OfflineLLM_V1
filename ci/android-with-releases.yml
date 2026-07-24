@@ -1,0 +1,122 @@
+name: Build OfflineLLM APK
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  GRADLE_VERSION: "8.2"
+
+# Needed so softprops/action-gh-release can create tags + upload APK assets
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v3
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Generate debug keystore
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkey -v -keystore ~/.android/debug.keystore \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 \
+              -validity 10000 -storepass android -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Read app version
+        id: ver
+        run: |
+          NAME=$(grep -oP "versionName\s+'\K[^']+" app/build.gradle | head -1)
+          CODE=$(grep -oP "versionCode\s+\K[0-9]+" app/build.gradle | head -1)
+          if [ -z "$NAME" ]; then NAME="0.0.0"; fi
+          if [ -z "$CODE" ]; then CODE="0"; fi
+          TAG="v${NAME// /-}"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Version name=$NAME code=$CODE tag=$TAG"
+
+      - name: Build Release APK
+        run: ./gradlew :app:assembleRelease
+
+      - name: Check APK size
+        run: ls -lh app/build/outputs/apk/release/app-release.apk
+
+      - name: Name APK for release
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk \
+            "OfflineLLM-${{ steps.ver.outputs.name }}.apk"
+          ls -lh "OfflineLLM-${{ steps.ver.outputs.name }}.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OfflineLLM-v1.0
+          path: OfflineLLM-${{ steps.ver.outputs.name }}.apk
+          if-no-files-found: error
+
+      # PRs only get the Actions artifact — Releases only on main push / manual run
+      - name: Publish GitHub Release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: OfflineLLM ${{ steps.ver.outputs.name }}
+          body: |
+            ## OfflineLLM `${{ steps.ver.outputs.name }}`
+
+            | | |
+            |---|---|
+            | **versionName** | `${{ steps.ver.outputs.name }}` |
+            | **versionCode** | `${{ steps.ver.outputs.code }}` |
+            | **commit** | `${{ github.sha }}` |
+            | **branch** | `${{ github.ref_name }}` |
+
+            ### Install
+            Download **OfflineLLM-${{ steps.ver.outputs.name }}.apk** below.
+
+            Signed with the CI **debug** keystore (sideload / testing). For Play Store you need your own release keystore.
+
+            Actions run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          files: OfflineLLM-${{ steps.ver.outputs.name }}.apk
+          draft: false
+          prerelease: false
+          make_latest: true
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Show build info
+        run: |
+          echo "Build completed"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Release tag: ${{ steps.ver.outputs.tag }}"
