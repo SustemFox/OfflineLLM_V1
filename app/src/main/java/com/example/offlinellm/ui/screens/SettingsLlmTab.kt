@@ -50,7 +50,7 @@ internal fun LlmTab(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Ускоритель: OpenCL = Adreno GPU (эксп.). На Adreno 6xx часто fallback на CPU. Vulkan — шаг 2.",
+                    "Ускоритель: OpenCL / Vulkan = эксп. GPU offload (n_gpu_layers). На Adreno 6xx / старых драйверах часто fallback на CPU.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -134,7 +134,7 @@ internal fun LlmTab(
                     valueRange = 1f..8f,
                     steps = 6
                 )
-                Text("GPU layers (OpenCL offload): ${state.nGpuLayers}")
+                Text("GPU layers (OpenCL/Vulkan offload): ${state.nGpuLayers}")
                 Text(
                     "0 = только CPU; 99 ≈ все слои. Нужен повторный «Выбрать».",
                     style = MaterialTheme.typography.bodySmall,
