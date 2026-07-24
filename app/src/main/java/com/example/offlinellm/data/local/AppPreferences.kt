@@ -179,8 +179,8 @@ object AppPreferences {
     fun resolveNGpuLayers(ctx: Context): Int {
         return when (getAccelPref(ctx)) {
             "cpu" -> 0
-            "vulkan" -> 0 // step 2 — not in this APK
-            "opencl", "auto" -> getNGpuLayers(ctx)
+            // OpenCL / Vulkan / auto: honor slider (0 = force CPU layers)
+            "opencl", "vulkan", "auto" -> getNGpuLayers(ctx)
             else -> getNGpuLayers(ctx)
         }
     }
