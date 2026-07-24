@@ -13,8 +13,8 @@ android {
         applicationId 'com.example.offlinellm'
         minSdk 26
         targetSdk 34
-        versionCode 19
-        versionName '1.5.12-bugfix'
+        versionCode 20
+        versionName '1.6.0-vulkan-exp'
 
         ndk {
             abiFilters 'arm64-v8a'
@@ -26,7 +26,8 @@ android {
                 arguments '-DANDROID_STL=c++_shared',
                           '-DGGML_NATIVE=OFF',
                           '-DOFFLINELLM_LLAMA_TAG=b10079',
-                          '-DOFFLINELLM_ENABLE_OPENCL=ON'
+                          '-DOFFLINELLM_ENABLE_OPENCL=ON',
+                          '-DOFFLINELLM_ENABLE_VULKAN=ON'
             }
         }
     }
@@ -221,9 +222,90 @@ tasks.register('buildOpenClIcd') {
     }
 }
 
+
+// --- Vulkan host tools (glslc + SPIRV-Headers) for GGML_VULKAN shader codegen ---
+def vulkanHost = file("${thirdParty}/vulkan-host")
+def spirvHeadersSrc = file("${thirdParty}/SPIRV-Headers")
+def spirvHeadersPrefix = file("${vulkanHost}/spirv-headers")
+
+tasks.register('cloneSpirvHeaders', Exec) {
+    outputs.dir(spirvHeadersSrc)
+    onlyIf { !new File(spirvHeadersSrc, 'CMakeLists.txt').exists() }
+    workingDir = thirdParty
+    doFirst { workingDir.mkdirs() }
+    commandLine 'git', 'clone', '--depth', '1',
+            'https://github.com/KhronosGroup/SPIRV-Headers.git', 'SPIRV-Headers'
+}
+
+tasks.register('installSpirvHeaders') {
+    dependsOn 'cloneSpirvHeaders'
+    def marker = file("${spirvHeadersPrefix}/.installed")
+    outputs.file(marker)
+    doLast {
+        spirvHeadersPrefix.mkdirs()
+        def buildDir = file("${spirvHeadersSrc}/build_install")
+        buildDir.mkdirs()
+        exec {
+            workingDir buildDir
+            commandLine 'cmake', spirvHeadersSrc.absolutePath,
+                    "-DCMAKE_INSTALL_PREFIX=${spirvHeadersPrefix.absolutePath}"
+        }
+        exec {
+            workingDir buildDir
+            commandLine 'cmake', '--install', '.'
+        }
+        marker.text = "ok\n"
+        println "SPIRV-Headers installed -> ${spirvHeadersPrefix}"
+    }
+}
+
+tasks.register('stageGlslc') {
+    def glslcOut = file("${vulkanHost}/bin/glslc")
+    outputs.file(glslcOut)
+    doLast {
+        vulkanHost.mkdirs()
+        new File(vulkanHost, 'bin').mkdirs()
+        // Prefer system glslc (apt on GHA / dev machines)
+        def proc = ["bash", "-lc", "command -v glslc || true"].execute()
+        proc.waitFor()
+        def sys = proc.text.trim()
+        if (sys) {
+            ant.copy(file: sys, tofile: glslcOut.absolutePath, overwrite: true)
+            ant.chmod(file: glslcOut.absolutePath, perm: "755")
+            println "glslc staged from system: ${sys}"
+            return
+        }
+        // Try sudo apt on passwordless CI runners
+        def apt = ["bash", "-lc", "sudo -n apt-get update -qq && sudo -n apt-get install -y -qq glslc libvulkan-dev spirv-headers 2>/dev/null; command -v glslc || true"].execute()
+        apt.waitFor()
+        sys = apt.text.trim().readLines().find { it.contains("glslc") || it.startsWith("/") } ?: apt.text.trim()
+        // re-check
+        proc = ["bash", "-lc", "command -v glslc || true"].execute()
+        proc.waitFor()
+        sys = proc.text.trim()
+        if (sys) {
+            ant.copy(file: sys, tofile: glslcOut.absolutePath, overwrite: true)
+            ant.chmod(file: glslcOut.absolutePath, perm: "755")
+            println "glslc staged after apt: ${sys}"
+            return
+        }
+        println "WARNING: glslc not found — Vulkan backend will be disabled at CMake configure"
+        // create empty marker so task doesn't rebuild forever without tool
+        if (!glslcOut.exists()) {
+            glslcOut.text = "#!/bin/sh\necho 'glslc missing' >&2\nexit 1\n"
+            ant.chmod(file: glslcOut.absolutePath, perm: "755")
+        }
+    }
+}
+
+tasks.register('stageVulkanHostDeps') {
+    dependsOn 'installSpirvHeaders', 'stageGlslc'
+}
+
+
 tasks.configureEach { task ->
     if (task.name.startsWith('configureCMake') || task.name.startsWith('buildCMake') || task.name.startsWith('externalNativeBuild')) {
-        task.dependsOn('cloneLlamaCpp', 'buildOpenClIcd')
+        task.dependsOn('cloneLlamaCpp', 'buildOpenClIcd', 'stageVulkanHostDeps')
     }
     if (task.name.startsWith('mergeReleaseNativeLibs') || task.name.startsWith('mergeDebugNativeLibs')) {
         task.dependsOn('buildOpenClIcd')
