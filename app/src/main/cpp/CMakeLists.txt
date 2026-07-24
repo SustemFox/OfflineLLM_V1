@@ -164,7 +164,6 @@ if (OFFLINELLM_OPENCL_BUILT)
 endif()
 
 if (OFFLINELLM_VULKAN_BUILT AND ANDROID_VULKAN_LIB)
-    target_link_libraries(offlinellm_jni ${ANDROID_VULKAN_LIB})
     # Vulkan-Hpp + SPIRV-Headers includes (find_package alone may not propagate to ggml-vulkan compile)
     set(_vk_inc "${VULKAN_HOST_ROOT}/include")
     set(_spirv_inc "${SPIRV_HEADERS_PREFIX}/include")
@@ -186,7 +185,14 @@ if (OFFLINELLM_VULKAN_BUILT AND ANDROID_VULKAN_LIB)
         if (EXISTS "${_spirv_inc}/spirv/unified1/spirv.hpp")
             target_include_directories(ggml-vulkan PRIVATE "${_spirv_inc}")
         endif()
+        # Ensure libvulkan is a real link dependency of the static ggml-vulkan archive consumers
+        target_link_libraries(ggml-vulkan PUBLIC ${ANDROID_VULKAN_LIB})
     endif()
+    # Force full libvulkan into the JNI .so (--as-needed can drop it despite static refs)
+    target_link_options(offlinellm_jni PRIVATE "-Wl,--no-as-needed")
+    target_link_libraries(offlinellm_jni ${ANDROID_VULKAN_LIB})
+    # Also pull by name so lld keeps Vulkan 1.1 entry points used from static lib
+    target_link_libraries(offlinellm_jni -lvulkan)
 endif()
 
 target_compile_options(offlinellm_jni PRIVATE -O3 -fvisibility=hidden)
