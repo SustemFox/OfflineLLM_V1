@@ -51,7 +51,7 @@ internal fun ServerTab(
         item {
             SettingsCard(
                 title = "HTTP-сервер",
-                subtitle = "OpenAI-compatible /v1 для Kai, curl, OpenClaw"
+                subtitle = "OpenAI-compatible /v1 (models, chat/completions, SSE stream, /health)"
             ) {
                 Row(
                     Modifier.fillMaxWidth(),
