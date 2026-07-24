@@ -1,4 +1,4 @@
-// ci-trigger: cpu-stable-no-vulkan-20260724
+// ci-trigger: no-vulkan-really-20260724
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
@@ -13,8 +13,8 @@ android {
         applicationId 'com.example.offlinellm'
         minSdk 28
         targetSdk 34
-        versionCode 24
-        versionName '1.6.4-cpu-stable'
+        versionCode 25
+        versionName '1.6.5-no-vulkan'
 
         ndk {
             abiFilters 'arm64-v8a'
@@ -27,7 +27,7 @@ android {
                           '-DGGML_NATIVE=OFF',
                           '-DOFFLINELLM_LLAMA_TAG=b10079',
                           '-DOFFLINELLM_ENABLE_OPENCL=ON',
-                          '-DOFFLINELLM_ENABLE_VULKAN=ON',
+                          '-DOFFLINELLM_ENABLE_VULKAN=OFF',
                           "-DSPIRV-Headers_DIR=${projectDir}/src/main/cpp/third_party/vulkan-host/spirv-headers/share/cmake/SPIRV-Headers",
                           "-DCMAKE_PREFIX_PATH=${projectDir}/src/main/cpp/third_party/vulkan-host/spirv-headers" 
             }
