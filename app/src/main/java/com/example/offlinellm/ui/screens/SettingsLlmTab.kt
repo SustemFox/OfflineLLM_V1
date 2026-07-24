@@ -50,7 +50,7 @@ internal fun LlmTab(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Ускоритель: OpenCL / Vulkan = эксп. GPU offload (n_gpu_layers). На Adreno 6xx / старых драйверах часто fallback на CPU.",
+                    "Ускоритель: Auto/CPU стабильно. OpenCL = эксп. GPU. Vulkan отключён в этой сборке (краш Adreno CreateFence).",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
