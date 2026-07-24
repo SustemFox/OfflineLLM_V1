@@ -624,6 +624,7 @@ class ChatViewModel(
     fun setAccelPref(pref: String) {
         AppPreferences.setAccelPref(application, pref)
         updateState { copy(accelPref = pref) }
+        systemMsg("Ускоритель: $pref — перезагрузи модель («Выбрать»), чтобы применить n_gpu_layers.")
     }
 
     // --- models download / select ---
