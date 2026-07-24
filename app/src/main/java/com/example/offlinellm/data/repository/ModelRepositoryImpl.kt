@@ -38,7 +38,6 @@ class ModelRepositoryImpl(
 
     private var availableModels: List<LlmModel> = emptyList()
     private var downloadedModelIds: MutableSet<String> = mutableSetOf()
-    private val cancelFlags = ConcurrentHashMap<String, Boolean>()
 
     init {
         refreshModels()
@@ -131,7 +130,7 @@ class ModelRepositoryImpl(
     override fun getActiveBackend(): String = LlamaBridge.getBackendInfoSafe()
 
     override fun cancelDownload(modelId: String) {
-        cancelFlags[modelId] = true
+        sharedCancelFlags[modelId] = true
         AppLogger.d("Download", "cancel requested: $modelId")
     }
 
@@ -139,7 +138,7 @@ class ModelRepositoryImpl(
         modelId: String,
         downloadUrl: String
     ): Flow<Float> = flow {
-        cancelFlags[modelId] = false
+        sharedCancelFlags[modelId] = false
         val saf = ModelsDirectoryManager.isSafMode(context)
         val partName = "$modelId.gguf.part"
         val destName = "$modelId.gguf"
@@ -163,7 +162,7 @@ class ModelRepositoryImpl(
         try {
             while (attempt < MAX_ATTEMPTS) {
                 currentCoroutineContext().ensureActive()
-                if (cancelFlags[modelId] == true) error("Download cancelled")
+                if (sharedCancelFlags[modelId] == true) error("Download cancelled")
 
                 val resumeFrom = if (saf) {
                     ModelsDirectoryManager.safFileLength(context, partName)
@@ -203,7 +202,7 @@ class ModelRepositoryImpl(
                     deletePart(saf, partName, tempFile)
                     throw e
                 } catch (e: Exception) {
-                    if (cancelFlags[modelId] == true || isCancelMessage(e)) {
+                    if (sharedCancelFlags[modelId] == true || isCancelMessage(e)) {
                         deletePart(saf, partName, tempFile)
                         error("Download cancelled")
                     }
@@ -230,7 +229,7 @@ class ModelRepositoryImpl(
             }
             throw lastError ?: IOException("Download failed after $MAX_ATTEMPTS attempts")
         } finally {
-            cancelFlags.remove(modelId)
+            sharedCancelFlags.remove(modelId)
         }
     }.flowOn(Dispatchers.IO)
 
@@ -289,7 +288,7 @@ class ModelRepositoryImpl(
         try {
             for (hop in 0 until 8) {
                 currentCoroutineContext().ensureActive()
-                if (cancelFlags[modelId] == true) throw CancelledDownload()
+                if (sharedCancelFlags[modelId] == true) throw CancelledDownload()
 
                 try { connection?.disconnect() } catch (_: Throwable) {}
 
@@ -393,7 +392,7 @@ class ModelRepositoryImpl(
                     BufferedOutputStream(outStream, BUFFER_SIZE).use { out ->
                         while (true) {
                             currentCoroutineContext().ensureActive()
-                            if (cancelFlags[modelId] == true) throw CancelledDownload()
+                            if (sharedCancelFlags[modelId] == true) throw CancelledDownload()
                             val read = try {
                                 input.read(buffer)
                             } catch (io: IOException) {
@@ -502,5 +501,8 @@ class ModelRepositoryImpl(
         private const val BUFFER_SIZE = 1 * 1024 * 1024
         private const val EMIT_INTERVAL_MS = 750L
         private const val MAX_ATTEMPTS = 12
+
+        /** Process-wide cancel flags so UI/AppProvider and DownloadService share state. */
+        private val sharedCancelFlags = ConcurrentHashMap<String, Boolean>()
     }
 }
