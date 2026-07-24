@@ -111,8 +111,9 @@ data class ErrorDetail(
 class LlmHttpServer(
     private val port: Int = 8080,
     private val host: String = "0.0.0.0",
-    private val generate: suspend (userPrompt: String, systemPrompt: String) -> Flow<String> =
-        { _, _ -> emptyFlow() },
+    private val generate: suspend (userPrompt: String, systemPrompt: String, maxTokens: Int) -> Flow<String> =
+        { _, _, _ -> emptyFlow() },
+    private val nCtxHint: () -> Int = { 2048 },
     private val modelId: () -> String = { "unknown" }
 ) {
     private var server: ApplicationEngine? = null
@@ -151,7 +152,7 @@ class LlmHttpServer(
                 }
                 get("/health") {
                     call.respondText(
-                        """{"ok":true,"model":${jsonEngine.encodeToString(modelId())},"busy":${busy.get()}}""",
+                        """{"ok":true,"model":${jsonEngine.encodeToString(modelId())},"busy":${busy.get()},"n_ctx":${nCtxHint()}}""",
                         ContentType.Application.Json
                     )
                 }
@@ -226,8 +227,8 @@ class LlmHttpServer(
                 )
                 return
             }
-            val (userPrompt, systemPrompt) = splitMessages(req.messages)
-            if (userPrompt.isBlank() && systemPrompt.isBlank()) {
+            val (userPrompt0, systemPrompt0) = splitMessages(req.messages)
+            if (userPrompt0.isBlank() && systemPrompt0.isBlank()) {
                 call.respondText(
                     status = HttpStatusCode.BadRequest,
                     contentType = ContentType.Application.Json,
@@ -237,8 +238,22 @@ class LlmHttpServer(
                 )
                 return
             }
+            val nctx = nCtxHint().coerceAtLeast(512)
+            val charBudget = (nctx * 3).coerceAtLeast(1500)
+            val (userPrompt, systemPrompt, wasTrimmed) = trimForBudget(userPrompt0, systemPrompt0, charBudget)
+            if (wasTrimmed) {
+                AppLogger.d(
+                    "HttpServer",
+                    "trimmed prompt ${userPrompt0.length + systemPrompt0.length}→${userPrompt.length + systemPrompt.length} chars for n_ctx=$nctx"
+                )
+            }
             val modelName = req.model.ifBlank { mid }
-            val flow = generate(userPrompt, systemPrompt)
+            val maxTok = if (req.max_tokens <= 0) -1 else req.max_tokens.coerceIn(1, 2048)
+            AppLogger.d(
+                "HttpServer",
+                "gen model=$modelName stream=${req.stream} maxTok=$maxTok sys=${systemPrompt.length} user=${userPrompt.length} msgs=${req.messages.size}"
+            )
+            val flow = generate(userPrompt, systemPrompt, maxTok)
 
             if (req.stream) {
                 call.response.cacheControl(CacheControl.NoCache(null))
@@ -309,6 +324,23 @@ class LlmHttpServer(
                 // Non-stream: last snapshot wins (emissions are full cleaned text, not deltas)
                 var last = ""
                 flow.collect { snap -> last = snap }
+                if (last.startsWith("ERROR:")) {
+                    AppLogger.e("HttpServer", "gen $last")
+                    call.respondText(
+                        status = HttpStatusCode.BadRequest,
+                        contentType = ContentType.Application.Json,
+                        text = jsonEngine.encodeToString(
+                            ErrorBody(
+                                ErrorDetail(
+                                    last.removePrefix("ERROR:").trim(),
+                                    type = "invalid_request_error",
+                                    code = "context_length"
+                                )
+                            )
+                        )
+                    )
+                    return
+                }
                 val response = ChatCompletionResponse(
                     id = id,
                     model = modelName,
@@ -355,28 +387,70 @@ class LlmHttpServer(
     }
 
     companion object {
+        
+        fun trimForBudget(user: String, system: String, budgetChars: Int): Triple<String, String, Boolean> {
+            val sysLen = system.length
+            val roomForUser = (budgetChars - sysLen - 64).coerceAtLeast(budgetChars / 2)
+            if (user.length <= roomForUser) return Triple(user, system, false)
+            var start = user.length - roomForUser
+            if (start < 0) start = 0
+            val nl = user.indexOf('\n', start)
+            if (nl in start until (start + 200)) start = nl + 1
+            val trimmedUser = "…[earlier messages truncated to fit n_ctx]…\n" +
+                user.substring(start.coerceAtMost(user.length))
+            return Triple(trimmedUser, system, true)
+        }
+
         /**
-         * OpenAI-style messages → engine (user + system) for ChatML.
-         * system roles become systemPrompt; user/assistant turns become dialogue text.
+         * Multi-turn: pack prior turns into system as ChatML history; last user = userPrompt.
+         * Single user message stays plain.
          */
         fun splitMessages(messages: List<ChatMessage>): Pair<String, String> {
             val systems = ArrayList<String>()
-            val rest = ArrayList<ChatMessage>()
+            val turns = ArrayList<ChatMessage>()
             for (m in messages) {
-                if (m.role.equals("system", ignoreCase = true)) {
-                    if (m.content.isNotBlank()) systems.add(m.content)
-                } else {
-                    rest.add(m)
+                val role = m.role.lowercase()
+                val content = m.content
+                if (content.isBlank() && role != "assistant") continue
+                when (role) {
+                    "system", "developer" -> {
+                        if (content.isNotBlank()) systems.add(content)
+                    }
+                    else -> turns.add(ChatMessage(role = role, content = content))
                 }
             }
-            val systemPrompt = systems.joinToString("\n").trim()
-            val userPrompt = when {
-                rest.isEmpty() -> ""
-                rest.size == 1 && rest[0].role.equals("user", ignoreCase = true) ->
-                    rest[0].content
-                else -> rest.joinToString("\n") { "${it.role}: ${it.content}" }
+            val baseSystem = systems.joinToString("\n").trim()
+            if (turns.isEmpty()) return "" to baseSystem
+            if (turns.size == 1 && turns[0].role == "user") {
+                return turns[0].content to baseSystem
             }
-            return userPrompt to systemPrompt
+            var lastUserIdx = turns.indexOfLast { it.role == "user" }
+            if (lastUserIdx < 0) lastUserIdx = turns.lastIndex
+            val history = turns.subList(0, lastUserIdx)
+            val last = turns[lastUserIdx]
+            val hist = StringBuilder()
+            if (baseSystem.isNotEmpty()) {
+                hist.append(baseSystem.trim()).append("\n\n")
+            }
+            if (history.isNotEmpty()) {
+                hist.append("## Conversation so far\n")
+                for (t in history) {
+                    val r = when (t.role) {
+                        "assistant" -> "assistant"
+                        "tool" -> "tool"
+                        else -> "user"
+                    }
+                    hist.append("<|im_start|>").append(r).append("\n")
+                    hist.append(t.content.trim())
+                    hist.append("<|im_end|>\n")
+                }
+                hist.append("Continue as the assistant. Stay in character. /no_think")
+            }
+            val userContent = if (last.role == "user") last.content
+            else turns.joinToString("\n") { "${it.role}: ${it.content}" }
+            return userContent to hist.toString().trim()
         }
+
+
     }
 }
