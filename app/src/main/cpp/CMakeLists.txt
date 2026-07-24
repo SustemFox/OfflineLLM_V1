@@ -1,4 +1,18 @@
 cmake_minimum_required(VERSION 3.22.1)
+
+# Vulkan disabled by default: ggml-Vulkan SIGSEGVs in libvulkan CreateFence on
+# Adreno 640 (OnePlus 7 / SD855) during createContext — kills the process.
+# Signal handlers cannot reliably recover. Re-enable only for devices known-good:
+#   -DOFFLINELLM_ENABLE_VULKAN=ON -DGGML_VULKAN=OFF
+if (NOT DEFINED OFFLINELLM_ENABLE_VULKAN)
+    set(OFFLINELLM_ENABLE_VULKAN OFF CACHE BOOL "Build experimental Vulkan backend")
+endif()
+if (NOT OFFLINELLM_ENABLE_VULKAN)
+    set(GGML_VULKAN OFF CACHE BOOL "ggml Vulkan" FORCE)
+    set(OFFLINELLM_VULKAN_BUILT 0)
+    message(STATUS "OfflineLLM: Vulkan backend DISABLED (safe default)")
+endif()
+
 project(offlinellm_jni)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -8,7 +22,7 @@ include(FetchContent)
 
 set(OFFLINELLM_LLAMA_TAG "b10079" CACHE STRING "llama.cpp git tag/branch")
 option(OFFLINELLM_ENABLE_OPENCL "Build llama.cpp with GGML_OPENCL" ON)
-option(OFFLINELLM_ENABLE_VULKAN "Build llama.cpp with GGML_VULKAN" ON)
+option(OFFLINELLM_ENABLE_VULKAN "Build ggml-vulkan (crashes on many Adreno)" OFF)
 
 set(LLAMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp)
 if (EXISTS "${LLAMA_DIR}/CMakeLists.txt")
@@ -121,7 +135,11 @@ if (OFFLINELLM_ENABLE_VULKAN)
         endif()
         set(ENV{VULKAN_SDK} "")
         set(GGML_VULKAN ON CACHE BOOL "" FORCE)
-        set(OFFLINELLM_VULKAN_BUILT 1)
+        if (OFFLINELLM_ENABLE_VULKAN)
+    set(OFFLINELLM_VULKAN_BUILT 1)
+else()
+    set(OFFLINELLM_VULKAN_BUILT 0)
+endif()
         message(STATUS "Enabling GGML_VULKAN")
     else()
         message(WARNING "Vulkan host/device deps incomplete (glslc='${Vulkan_GLSLC_EXECUTABLE}', lib='${ANDROID_VULKAN_LIB}') — Vulkan off")
