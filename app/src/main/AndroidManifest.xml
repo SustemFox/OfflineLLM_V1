@@ -8,6 +8,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Vulkan optional: app must install on devices without Vulkan -->
+    <uses-feature
+        android:name="android.hardware.vulkan.level"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.vulkan.version"
+        android:required="false" />
     <!-- Storage for legacy Android (9-) to access shared models folder -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
