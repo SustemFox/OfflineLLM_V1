@@ -58,7 +58,7 @@ object LlamaBridge {
         } catch (t: Throwable) {
             AppLogger.d("LlamaBridge", "OpenCL ICD not loaded: ${t.message}")
         }
-        for (opt in listOf("ggml-hexagon", "ggml-htp-v75", "ggml-htp-v73", "ggml-vulkan", "ggml-opencl")) {
+        for (opt in listOf("ggml-hexagon", "ggml-htp-v75", "ggml-htp-v73", "ggml-opencl")) {
             try {
                 System.loadLibrary(opt)
                 AppLogger.d("LlamaBridge", "optional loaded: $opt")
