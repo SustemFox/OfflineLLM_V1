@@ -206,7 +206,11 @@ Java_com_example_offlinellm_llama_LlamaBridge_createContext(
           path.c_str(), (int)n_ctx, (int)n_gpu_layers, (int)n_threads,
           OFFLINELLM_LLAMA_TAG, OFFLINELLM_OPENCL_BUILT, OFFLINELLM_VULKAN_BUILT);
 
-    std::call_once(g_backend_once, []() { llama_backend_init(); });
+    std::call_once(g_backend_once, []() {
+        ALOGI("llama_backend_init (opencl=%d vulkan=%d)", OFFLINELLM_OPENCL_BUILT, OFFLINELLM_VULKAN_BUILT);
+        llama_backend_init();
+        ALOGI("llama_backend_init done");
+    });
 
     int want_ngl = (int)n_gpu_layers;
 #if !OFFLINELLM_GPU_OFFLOAD_BUILT
