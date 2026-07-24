@@ -151,48 +151,60 @@ target_include_directories(offlinellm_jni PRIVATE
     ${LLAMA_SRC}/ggml/include
 )
 
-if (TARGET llama)
-    target_link_libraries(offlinellm_jni llama android log)
-else()
+if (NOT TARGET llama)
     message(FATAL_ERROR "llama CMake target not found")
 endif()
 
+# Base libs
+target_link_libraries(offlinellm_jni PRIVATE llama android log)
+
 if (OFFLINELLM_OPENCL_BUILT)
     target_include_directories(offlinellm_jni PRIVATE ${OPENCL_INC_DIR})
-    target_link_libraries(offlinellm_jni ${OPENCL_ICD_LIB})
+    target_link_libraries(offlinellm_jni PRIVATE ${OPENCL_ICD_LIB})
     target_link_options(offlinellm_jni PRIVATE "-Wl,--no-as-needed")
 endif()
 
-if (OFFLINELLM_VULKAN_BUILT AND ANDROID_VULKAN_LIB)
-    # Vulkan-Hpp + SPIRV-Headers includes (find_package alone may not propagate to ggml-vulkan compile)
+if (OFFLINELLM_VULKAN_BUILT)
     set(_vk_inc "${VULKAN_HOST_ROOT}/include")
     set(_spirv_inc "${SPIRV_HEADERS_PREFIX}/include")
     if (EXISTS "${_vk_inc}/vulkan/vulkan.hpp")
-        include_directories(BEFORE "${_vk_inc}")
         target_include_directories(offlinellm_jni PRIVATE "${_vk_inc}")
-    endif()
-    if (EXISTS "${_spirv_inc}/spirv/unified1/spirv.hpp")
-        include_directories(BEFORE "${_spirv_inc}")
-        target_include_directories(offlinellm_jni PRIVATE "${_spirv_inc}")
-        message(STATUS "SPIRV include: ${_spirv_inc}")
-    else()
-        message(WARNING "spirv.hpp not found under ${_spirv_inc}")
-    endif()
-    if (TARGET ggml-vulkan)
-        if (EXISTS "${_vk_inc}/vulkan/vulkan.hpp")
+        if (TARGET ggml-vulkan)
             target_include_directories(ggml-vulkan PRIVATE "${_vk_inc}")
         endif()
-        if (EXISTS "${_spirv_inc}/spirv/unified1/spirv.hpp")
+    endif()
+    if (EXISTS "${_spirv_inc}/spirv/unified1/spirv.hpp")
+        target_include_directories(offlinellm_jni PRIVATE "${_spirv_inc}")
+        if (TARGET ggml-vulkan)
             target_include_directories(ggml-vulkan PRIVATE "${_spirv_inc}")
         endif()
-        # Ensure libvulkan is a real link dependency of the static ggml-vulkan archive consumers
+        message(STATUS "SPIRV include: ${_spirv_inc}")
+    endif()
+
+    # Static ggml-vulkan pulls Vulkan symbols; force libvulkan AFTER llama group.
+    # lld + --as-needed otherwise drops libvulkan before seeing static archive refs.
+    if (TARGET ggml-vulkan AND ANDROID_VULKAN_LIB)
         target_link_libraries(ggml-vulkan PUBLIC ${ANDROID_VULKAN_LIB})
     endif()
-    # Force full libvulkan into the JNI .so (--as-needed can drop it despite static refs)
-    target_link_options(offlinellm_jni PRIVATE "-Wl,--no-as-needed")
-    target_link_libraries(offlinellm_jni ${ANDROID_VULKAN_LIB})
-    # Also pull by name so lld keeps Vulkan 1.1 entry points used from static lib
-    target_link_libraries(offlinellm_jni -lvulkan)
+
+    # Explicit group: resolve circular/static refs between llama stack and libvulkan
+    if (ANDROID_VULKAN_LIB)
+        target_link_options(offlinellm_jni PRIVATE
+            "-Wl,--no-as-needed"
+            "-Wl,--start-group"
+        )
+        target_link_libraries(offlinellm_jni PRIVATE
+            ${ANDROID_VULKAN_LIB}
+            vulkan
+        )
+        target_link_options(offlinellm_jni PRIVATE
+            "-Wl,--end-group"
+        )
+        # Final hammer: append raw flags so vulkan is last on the link line
+        set_property(TARGET offlinellm_jni APPEND_STRING PROPERTY
+            LINK_FLAGS " -Wl,--no-as-needed ${ANDROID_VULKAN_LIB} -lvulkan ")
+        message(STATUS "Linking JNI with Vulkan: ${ANDROID_VULKAN_LIB}")
+    endif()
 endif()
 
 target_compile_options(offlinellm_jni PRIVATE -O3 -fvisibility=hidden)
