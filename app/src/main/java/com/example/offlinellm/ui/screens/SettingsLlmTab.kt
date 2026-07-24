@@ -60,7 +60,7 @@ internal fun LlmTab(
                         "auto" to "Auto (CPU)",
                         "cpu" to "CPU",
                         "opencl" to "OpenCL",
-                        "vulkan" to "Vulkan ⚠"
+                        "vulkan" to "Vulkan (off)"
                     ).forEach { (id, label) ->
                         FilterChip(
                             selected = state.accelPref == id,
