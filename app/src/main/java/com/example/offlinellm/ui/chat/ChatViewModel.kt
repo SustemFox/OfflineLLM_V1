@@ -354,13 +354,21 @@ class ChatViewModel(
                 val server = LlmHttpServer(
                     port = usePort,
                     host = "0.0.0.0",
-                    generate = { userPrompt, systemPrompt ->
+                    generate = { userPrompt, systemPrompt, maxTokensOverride ->
                         applyLiveSampling()
+                        if (maxTokensOverride > 0) {
+                            try {
+                                (AppProvider.llmRepository as? LocalLlmRepository)
+                                    ?.applyMaxTokensOverride(maxTokensOverride)
+                            } catch (_: Throwable) {
+                            }
+                        }
                         AppProvider.llmRepository.generateResponse(
                             userPrompt,
                             systemPrompt.takeIf { it.isNotBlank() }
                         )
                     },
+                    nCtxHint = { _uiState.value.nCtx },
                     modelId = {
                         _uiState.value.selectedModel?.name
                             ?: _uiState.value.selectedModel?.id
