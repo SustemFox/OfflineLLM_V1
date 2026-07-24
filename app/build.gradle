@@ -1,4 +1,4 @@
-// ci-trigger: vulkan-safe-20260724
+// ci-trigger: cpu-stable-no-vulkan-20260724
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
@@ -13,8 +13,8 @@ android {
         applicationId 'com.example.offlinellm'
         minSdk 28
         targetSdk 34
-        versionCode 23
-        versionName '1.6.3-vulkan-safe'
+        versionCode 24
+        versionName '1.6.4-cpu-stable'
 
         ndk {
             abiFilters 'arm64-v8a'
