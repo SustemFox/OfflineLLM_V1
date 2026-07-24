@@ -353,9 +353,12 @@ class ChatViewModel(
                 AppPreferences.setServerPort(application, usePort)
                 val server = LlmHttpServer(
                     port = usePort,
-                    generate = { prompt ->
+                    generate = { userPrompt, systemPrompt ->
                         applyLiveSampling()
-                        AppProvider.llmRepository.generateResponse(prompt)
+                        AppProvider.llmRepository.generateResponse(
+                            userPrompt,
+                            systemPrompt.takeIf { it.isNotBlank() }
+                        )
                     },
                     modelId = { _uiState.value.selectedModel?.id ?: "local-model" }
                 )
@@ -485,6 +488,7 @@ class ChatViewModel(
         val c = v.coerceIn(0, 999)
         AppPreferences.setNGpuLayers(application, c)
         updateState { copy(nGpuLayers = c) }
+        systemMsg("n_gpu_layers=$c — перезагрузи модель («Выбрать»), чтобы применить.")
     }
 
     fun toggleTheme() {
