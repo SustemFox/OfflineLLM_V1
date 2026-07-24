@@ -78,11 +78,23 @@ object AppPreferences {
         p(ctx).edit().putString(KEY_SELECTED_MODEL, id).apply()
     }
 
-    fun getAccelPref(ctx: Context): String =
-        p(ctx).getString(KEY_ACCEL_PREF, "auto") ?: "auto"
+    fun getAccelPref(ctx: Context): String {
+        val raw = p(ctx).getString(KEY_ACCEL_PREF, "auto") ?: "auto"
+        // Vulkan on Adreno 640 (OP7) SIGSEGVs in libvulkan CreateFence — refuse sticky pref
+        if (raw == "vulkan") {
+            p(ctx).edit().putString(KEY_ACCEL_PREF, "auto").apply()
+            return "auto"
+        }
+        return raw
+    }
 
     fun setAccelPref(ctx: Context, pref: String) {
-        p(ctx).edit().putString(KEY_ACCEL_PREF, pref).apply()
+        val v = if (pref == "vulkan") {
+            // Keep UI selection possible only if a future build re-enables Vulkan;
+            // for now coerce to auto so resolveNGpuLayers stays 0.
+            "auto"
+        } else pref
+        p(ctx).edit().putString(KEY_ACCEL_PREF, v).apply()
     }
 
     fun getServerPort(ctx: Context): Int =
