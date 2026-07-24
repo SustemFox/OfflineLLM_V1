@@ -24,6 +24,16 @@
 #define OFFLINELLM_OPENCL_BUILT 0
 #endif
 
+#ifndef OFFLINELLM_VULKAN_BUILT
+#define OFFLINELLM_VULKAN_BUILT 0
+#endif
+
+#if OFFLINELLM_OPENCL_BUILT || OFFLINELLM_VULKAN_BUILT
+#define OFFLINELLM_GPU_OFFLOAD_BUILT 1
+#else
+#define OFFLINELLM_GPU_OFFLOAD_BUILT 0
+#endif
+
 static std::once_flag g_backend_once;
 
 struct ContextHandle {
@@ -48,11 +58,17 @@ static jstring to_jstring(JNIEnv * env, const std::string & s) {
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_example_offlinellm_llama_LlamaBridge_getBackendInfo(JNIEnv * env, jclass) {
-#if OFFLINELLM_OPENCL_BUILT
-    std::string s = std::string("CPU+OpenCL (llama.cpp ") + OFFLINELLM_LLAMA_TAG + ")";
-#else
-    std::string s = std::string("CPU (llama.cpp ") + OFFLINELLM_LLAMA_TAG + " NEON)";
+    std::string s = "CPU";
+#if OFFLINELLM_OPENCL_BUILT && OFFLINELLM_VULKAN_BUILT
+    s = "CPU+OpenCL+Vulkan";
+#elif OFFLINELLM_VULKAN_BUILT
+    s = "CPU+Vulkan";
+#elif OFFLINELLM_OPENCL_BUILT
+    s = "CPU+OpenCL";
 #endif
+    s += " (llama.cpp ";
+    s += OFFLINELLM_LLAMA_TAG;
+    s += ")";
     return env->NewStringUTF(s.c_str());
 }
 
@@ -65,17 +81,26 @@ Java_com_example_offlinellm_llama_LlamaBridge_isOpenClBuilt(JNIEnv *, jclass) {
 #endif
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_example_offlinellm_llama_LlamaBridge_isVulkanBuilt(JNIEnv *, jclass) {
+#if OFFLINELLM_VULKAN_BUILT
+    return JNI_TRUE;
+#else
+    return JNI_FALSE;
+#endif
+}
+
 static ContextHandle * try_create(const std::string & path, int n_ctx, int n_gpu_layers, int n_threads) {
     llama_model_params mparams = llama_model_default_params();
-#if OFFLINELLM_OPENCL_BUILT
+#if OFFLINELLM_GPU_OFFLOAD_BUILT
     mparams.n_gpu_layers = n_gpu_layers;
 #else
     (void)n_gpu_layers;
     mparams.n_gpu_layers = 0;
 #endif
 
-    ALOGI("load model path=%s n_gpu_layers=%d opencl_built=%d",
-          path.c_str(), (int)mparams.n_gpu_layers, OFFLINELLM_OPENCL_BUILT);
+    ALOGI("load model path=%s n_gpu_layers=%d opencl_built=%d vulkan_built=%d",
+          path.c_str(), (int)mparams.n_gpu_layers, OFFLINELLM_OPENCL_BUILT, OFFLINELLM_VULKAN_BUILT);
 
     llama_model * model = llama_model_load_from_file(path.c_str(), mparams);
     if (!model) {
@@ -117,21 +142,21 @@ Java_com_example_offlinellm_llama_LlamaBridge_createContext(
         JNIEnv * env, jclass,
         jstring jpath, jint n_ctx, jint n_gpu_layers, jint n_threads) {
     const std::string path = jstring_to_string(env, jpath);
-    ALOGI("createContext path=%s n_ctx=%d ngl=%d threads=%d tag=%s opencl=%d",
+    ALOGI("createContext path=%s n_ctx=%d ngl=%d threads=%d tag=%s opencl=%d vulkan=%d",
           path.c_str(), (int)n_ctx, (int)n_gpu_layers, (int)n_threads,
-          OFFLINELLM_LLAMA_TAG, OFFLINELLM_OPENCL_BUILT);
+          OFFLINELLM_LLAMA_TAG, OFFLINELLM_OPENCL_BUILT, OFFLINELLM_VULKAN_BUILT);
 
     std::call_once(g_backend_once, []() { llama_backend_init(); });
 
     int want_ngl = (int)n_gpu_layers;
-#if !OFFLINELLM_OPENCL_BUILT
+#if !OFFLINELLM_GPU_OFFLOAD_BUILT
     want_ngl = 0;
 #endif
 
     ContextHandle * handle = try_create(path, (int)n_ctx, want_ngl, (int)n_threads);
-#if OFFLINELLM_OPENCL_BUILT
+#if OFFLINELLM_GPU_OFFLOAD_BUILT
     if (!handle && want_ngl != 0) {
-        ALOGW("OpenCL/ngl load failed — falling back to CPU n_gpu_layers=0");
+        ALOGW("GPU offload (OpenCL/Vulkan) load failed — falling back to CPU n_gpu_layers=0");
         handle = try_create(path, (int)n_ctx, 0, (int)n_threads);
     }
 #endif
@@ -648,11 +673,17 @@ Java_com_example_offlinellm_llama_LlamaBridge_runInferenceStream(
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_example_offlinellm_llama_LlamaBridge_benchmark(
         JNIEnv * env, jclass, jlong, jint, jint) {
-#if OFFLINELLM_OPENCL_BUILT
-    std::string s = std::string("benchmark: n/a (CPU+OpenCL JNI ") + OFFLINELLM_LLAMA_TAG + ")";
+    std::string s = std::string("benchmark: n/a (") +
+#if OFFLINELLM_OPENCL_BUILT && OFFLINELLM_VULKAN_BUILT
+        "CPU+OpenCL+Vulkan JNI "
+#elif OFFLINELLM_VULKAN_BUILT
+        "CPU+Vulkan JNI "
+#elif OFFLINELLM_OPENCL_BUILT
+        "CPU+OpenCL JNI "
 #else
-    std::string s = std::string("benchmark: n/a (CPU JNI ") + OFFLINELLM_LLAMA_TAG + ")";
+        "CPU JNI "
 #endif
+        + OFFLINELLM_LLAMA_TAG + ")";
     return env->NewStringUTF(s.c_str());
 }
 
