@@ -575,14 +575,27 @@ static std::string generate_loop(
         return "ERROR: tokenize failed";
     }
     tokens.resize((size_t)n_tok);
-    if (n_tok >= n_ctx - 8) {
-        return "ERROR: prompt too long for n_ctx";
+
+    // Leave room for generation. Keep the *end* of the prompt (recent turns).
+    int max_new_budget = max_tokens > 0 ? max_tokens : 128;
+    if (max_new_budget > 512) max_new_budget = 512;
+    int max_prompt = n_ctx - max_new_budget - 8;
+    if (max_prompt < 64) max_prompt = n_ctx / 2;
+    if (n_tok > max_prompt) {
+        ALOGW("prompt tokens=%d > max_prompt=%d (n_ctx=%d) — truncating head, keep tail",
+              n_tok, max_prompt, n_ctx);
+        const int drop = n_tok - max_prompt;
+        std::vector<llama_token> kept(tokens.begin() + drop, tokens.end());
+        tokens.swap(kept);
+        n_tok = (int)tokens.size();
     }
+    ALOGI("prompt tokens=%d n_ctx=%d max_new≈%d sys_len=%zu user_len=%zu",
+          n_tok, n_ctx, max_new_budget, system.size(), user.size());
 
     for (int i = 0; i < n_tok; ++i) {
         llama_batch batch = llama_batch_get_one(&tokens[(size_t)i], 1);
         if (llama_decode(handle->ctx, batch) != 0) {
-            ALOGE("prompt decode fail at %d", i);
+            ALOGE("prompt decode fail at %d/%d", i, n_tok);
             return "ERROR: prompt decode failed";
         }
     }
