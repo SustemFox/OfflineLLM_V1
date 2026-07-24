@@ -1,21 +1,35 @@
-# OfflineLLM_V1
+# Offline LLM
 
-Android offline LLM via **llama.cpp** (CPU JNI build) + optional OpenAI-compatible HTTP on `:8080`.
+Android app for running GGUF language models **on-device** (llama.cpp), with optional local OpenAI-compatible HTTP server.
 
-## v1.1 notes
-Legacy prebuilt `jniLibs` (Vulkan/OpenCL) were **broken** (corrupt ELF / no JNI).  
-CI now builds **CPU-only** `libofflinellm_jni.so` from upstream [llama.cpp](https://github.com/ggml-org/llama.cpp).
+## Features
 
-## Build (CI)
-Push to `main` or run workflow **Build OfflineLLM APK**.  
-Artifact: `OfflineLLM-v1.1-cpu`.
+- Download GGUF models (catalog + Hugging Face search)
+- Chat UI (Compose)
+- llama.cpp native engine (CPU, experimental OpenCL)
+- SAF storage for models
+- Local HTTP API (LAN IP + configurable port)
+- LLM settings: temperature, top-p, penalties, context, threads, system prompt
 
-Local (needs NDK + llama.cpp clone):
+## Requirements
+
+- Android device (arm64 recommended)
+- Enough free storage for GGUF weights (small Q4 models ~0.4–1 GB+)
+
+## Build
+
 ```bash
-git clone --depth 1 https://github.com/ggml-org/llama.cpp.git app/src/main/cpp/third_party/llama.cpp
-./gradlew :app:assembleRelease
+./gradlew :app:assembleDebug
 ```
 
-## Docs
-- [PLAN.md](PLAN.md)
-- [STATUS.md](STATUS.md)
+CI builds an APK artifact on push to `main` (see `.github/workflows/android.yml`).
+
+## Notes
+
+- Large models need RAM; start with small Q4_K_M builds (e.g. Qwen 0.6B–1.7B / 3.5 0.8B).
+- OpenCL offload is experimental and device-dependent.
+- Hugging Face token is optional (rate limits / gated repos); it does not usually increase CDN speed.
+
+## License
+
+See repository files / upstream llama.cpp licensing for native components.
