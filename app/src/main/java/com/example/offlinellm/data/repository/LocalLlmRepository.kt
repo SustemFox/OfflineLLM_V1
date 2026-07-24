@@ -48,6 +48,16 @@ class LocalLlmRepository(
         )
     }
 
+    fun applyMaxTokensOverride(maxTokens: Int) {
+        engine.updateSampling(
+            maxTokens = maxTokens.coerceIn(1, 2048),
+            temperature = AppPreferences.getTemperature(context),
+            topP = AppPreferences.getTopP(context),
+            repeatPenalty = AppPreferences.getRepeatPenalty(context),
+            frequencyPenalty = AppPreferences.getFrequencyPenalty(context)
+        )
+    }
+
     private suspend fun loadEngine() {
         if (!loaded) {
             withContext(Dispatchers.IO) {
