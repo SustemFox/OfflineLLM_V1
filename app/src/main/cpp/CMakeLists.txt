@@ -8,6 +8,7 @@ include(FetchContent)
 
 set(OFFLINELLM_LLAMA_TAG "b10079" CACHE STRING "llama.cpp git tag/branch")
 option(OFFLINELLM_ENABLE_OPENCL "Build llama.cpp with GGML_OPENCL" ON)
+option(OFFLINELLM_ENABLE_VULKAN "Build llama.cpp with GGML_VULKAN" ON)
 
 set(LLAMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp)
 if (EXISTS "${LLAMA_DIR}/CMakeLists.txt")
@@ -36,14 +37,19 @@ set(LLAMA_BUILD_COMMON OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
-set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
 set(GGML_HEXAGON OFF CACHE BOOL "" FORCE)
 set(GGML_BLAS OFF CACHE BOOL "" FORCE)
 set(GGML_CUDA OFF CACHE BOOL "" FORCE)
 set(GGML_LLAMAFILE OFF CACHE BOOL "" FORCE)
 set(GGML_CCACHE OFF CACHE BOOL "" FORCE)
 
+# Defaults; may be turned on below
+set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
+set(GGML_OPENCL OFF CACHE BOOL "" FORCE)
+
 set(OFFLINELLM_OPENCL_BUILT 0)
+set(OFFLINELLM_VULKAN_BUILT 0)
+
 set(OPENCL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/opencl")
 set(OPENCL_ICD_LIB "${OPENCL_ROOT}/lib/libOpenCL.so")
 set(OPENCL_INC_DIR "${OPENCL_ROOT}/include")
@@ -59,11 +65,54 @@ if (OFFLINELLM_ENABLE_OPENCL)
         set(GGML_OPENCL_USE_ADRENO_KERNELS ON CACHE BOOL "" FORCE)
         set(OFFLINELLM_OPENCL_BUILT 1)
     else()
-        message(WARNING "OpenCL deps missing at ${OPENCL_ROOT} — building CPU-only")
+        message(WARNING "OpenCL deps missing at ${OPENCL_ROOT} — OpenCL off")
         set(GGML_OPENCL OFF CACHE BOOL "" FORCE)
     endif()
+endif()
+
+# --- Vulkan (host glslc + SPIRV-Headers for shader gen; NDK libvulkan at link) ---
+set(VULKAN_HOST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/vulkan-host")
+if (OFFLINELLM_ENABLE_VULKAN)
+    # glslc: staged by Gradle or on PATH
+    if (NOT Vulkan_GLSLC_EXECUTABLE)
+        if (EXISTS "${VULKAN_HOST_ROOT}/bin/glslc")
+            set(Vulkan_GLSLC_EXECUTABLE "${VULKAN_HOST_ROOT}/bin/glslc" CACHE FILEPATH "" FORCE)
+        else()
+            find_program(Vulkan_GLSLC_EXECUTABLE glslc)
+        endif()
+    endif()
+
+    # SPIRV-Headers cmake package (Gradle stages install prefix)
+    set(SPIRV_HEADERS_PREFIX "${VULKAN_HOST_ROOT}/spirv-headers")
+    if (EXISTS "${SPIRV_HEADERS_PREFIX}/share/cmake/SPIRV-Headers")
+        list(APPEND CMAKE_PREFIX_PATH "${SPIRV_HEADERS_PREFIX}")
+    elseif (EXISTS "${SPIRV_HEADERS_PREFIX}/lib/cmake/SPIRV-Headers")
+        list(APPEND CMAKE_PREFIX_PATH "${SPIRV_HEADERS_PREFIX}")
+    endif()
+
+    # Android sysroot Vulkan headers + lib
+    find_library(ANDROID_VULKAN_LIB vulkan)
+    find_path(ANDROID_VULKAN_INCLUDE vulkan/vulkan.h)
+
+    if (Vulkan_GLSLC_EXECUTABLE AND ANDROID_VULKAN_LIB)
+        message(STATUS "Vulkan: glslc=${Vulkan_GLSLC_EXECUTABLE}")
+        message(STATUS "Vulkan: lib=${ANDROID_VULKAN_LIB}")
+        set(Vulkan_LIBRARY "${ANDROID_VULKAN_LIB}" CACHE FILEPATH "" FORCE)
+        if (ANDROID_VULKAN_INCLUDE)
+            set(Vulkan_INCLUDE_DIR "${ANDROID_VULKAN_INCLUDE}" CACHE PATH "" FORCE)
+        endif()
+        # Help find_package(Vulkan)
+        set(ENV{VULKAN_SDK} "")
+        set(GGML_VULKAN ON CACHE BOOL "" FORCE)
+        set(OFFLINELLM_VULKAN_BUILT 1)
+        message(STATUS "Enabling GGML_VULKAN")
+    else()
+        message(WARNING "Vulkan host/device deps incomplete (glslc='${Vulkan_GLSLC_EXECUTABLE}', lib='${ANDROID_VULKAN_LIB}') — Vulkan off")
+        set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
+        set(OFFLINELLM_VULKAN_BUILT 0)
+    endif()
 else()
-    set(GGML_OPENCL OFF CACHE BOOL "" FORCE)
+    set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
 endif()
 
 add_subdirectory(${LLAMA_SRC} llama_build EXCLUDE_FROM_ALL)
@@ -87,9 +136,14 @@ if (OFFLINELLM_OPENCL_BUILT)
     target_link_options(offlinellm_jni PRIVATE "-Wl,--no-as-needed")
 endif()
 
+if (OFFLINELLM_VULKAN_BUILT AND ANDROID_VULKAN_LIB)
+    target_link_libraries(offlinellm_jni ${ANDROID_VULKAN_LIB})
+endif()
+
 target_compile_options(offlinellm_jni PRIVATE -O3 -fvisibility=hidden)
 
 target_compile_definitions(offlinellm_jni PRIVATE
     OFFLINELLM_LLAMA_TAG="${OFFLINELLM_LLAMA_TAG}"
     OFFLINELLM_OPENCL_BUILT=${OFFLINELLM_OPENCL_BUILT}
+    OFFLINELLM_VULKAN_BUILT=${OFFLINELLM_VULKAN_BUILT}
 )
