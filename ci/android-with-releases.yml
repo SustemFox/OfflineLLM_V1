@@ -47,6 +47,11 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
 
+      - name: Install Vulkan host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y glslc libvulkan-dev spirv-headers ninja-build
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
