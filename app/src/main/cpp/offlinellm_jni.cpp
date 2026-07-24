@@ -8,6 +8,8 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <csetjmp>
+#include <csignal>
 
 #include "llama.h"
 
@@ -90,7 +92,46 @@ Java_com_example_offlinellm_llama_LlamaBridge_isVulkanBuilt(JNIEnv *, jclass) {
 #endif
 }
 
-static ContextHandle * try_create(const std::string & path, int n_ctx, int n_gpu_layers, int n_threads) {
+// Catch native SIGSEGV during GPU backend init (e.g. Adreno + ggml-vulkan CreateFence NPE).
+// Kotlin try/catch cannot recover process-killing signals.
+static thread_local sigjmp_buf g_load_jmp;
+static thread_local volatile sig_atomic_t g_load_guard = 0;
+
+static void offlinellm_load_sig_handler(int sig) {
+    if (g_load_guard) {
+        siglongjmp(g_load_jmp, sig ? sig : 1);
+    }
+    // Not in guarded region — restore default and re-raise
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+struct ScopedLoadSignalGuard {
+    struct sigaction old_segv {};
+    struct sigaction old_bus {};
+    bool active = false;
+    ScopedLoadSignalGuard() {
+        struct sigaction sa {};
+        sa.sa_handler = offlinellm_load_sig_handler;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0;
+        if (sigaction(SIGSEGV, &sa, &old_segv) != 0) return;
+        if (sigaction(SIGBUS, &sa, &old_bus) != 0) {
+            sigaction(SIGSEGV, &old_segv, nullptr);
+            return;
+        }
+        active = true;
+        g_load_guard = 1;
+    }
+    ~ScopedLoadSignalGuard() {
+        if (!active) return;
+        g_load_guard = 0;
+        sigaction(SIGSEGV, &old_segv, nullptr);
+        sigaction(SIGBUS, &old_bus, nullptr);
+    }
+};
+
+static ContextHandle * try_create_unguarded(const std::string & path, int n_ctx, int n_gpu_layers, int n_threads) {
     llama_model_params mparams = llama_model_default_params();
 #if OFFLINELLM_GPU_OFFLOAD_BUILT
     mparams.n_gpu_layers = n_gpu_layers;
@@ -137,6 +178,25 @@ static ContextHandle * try_create(const std::string & path, int n_ctx, int n_gpu
     return handle;
 }
 
+/** try_create with optional SEGV/BUS catch when GPU offload is requested. */
+static ContextHandle * try_create(const std::string & path, int n_ctx, int n_gpu_layers, int n_threads) {
+#if OFFLINELLM_GPU_OFFLOAD_BUILT
+    if (n_gpu_layers != 0) {
+        ScopedLoadSignalGuard guard;
+        if (guard.active) {
+            int jumped = sigsetjmp(g_load_jmp, 1);
+            if (jumped != 0) {
+                ALOGE("native signal %d during GPU model load (ngl=%d) — aborting this attempt",
+                      jumped, n_gpu_layers);
+                return nullptr;
+            }
+            return try_create_unguarded(path, n_ctx, n_gpu_layers, n_threads);
+        }
+    }
+#endif
+    return try_create_unguarded(path, n_ctx, n_gpu_layers, n_threads);
+}
+
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_example_offlinellm_llama_LlamaBridge_createContext(
         JNIEnv * env, jclass,
@@ -156,7 +216,7 @@ Java_com_example_offlinellm_llama_LlamaBridge_createContext(
     ContextHandle * handle = try_create(path, (int)n_ctx, want_ngl, (int)n_threads);
 #if OFFLINELLM_GPU_OFFLOAD_BUILT
     if (!handle && want_ngl != 0) {
-        ALOGW("GPU offload (OpenCL/Vulkan) load failed — falling back to CPU n_gpu_layers=0");
+        ALOGW("GPU offload load failed/crashed — falling back to CPU n_gpu_layers=0");
         handle = try_create(path, (int)n_ctx, 0, (int)n_threads);
     }
 #endif
