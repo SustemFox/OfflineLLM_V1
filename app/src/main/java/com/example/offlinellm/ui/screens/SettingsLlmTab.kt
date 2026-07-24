@@ -57,10 +57,10 @@ internal fun LlmTab(
                 Spacer(Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(
-                        "auto" to "Auto",
+                        "auto" to "Auto (CPU)",
                         "cpu" to "CPU",
                         "opencl" to "OpenCL",
-                        "vulkan" to "Vulkan"
+                        "vulkan" to "Vulkan ⚠"
                     ).forEach { (id, label) ->
                         FilterChip(
                             selected = state.accelPref == id,
