@@ -353,6 +353,7 @@ class ChatViewModel(
                 AppPreferences.setServerPort(application, usePort)
                 val server = LlmHttpServer(
                     port = usePort,
+                    host = "0.0.0.0",
                     generate = { userPrompt, systemPrompt ->
                         applyLiveSampling()
                         AppProvider.llmRepository.generateResponse(
@@ -360,7 +361,11 @@ class ChatViewModel(
                             systemPrompt.takeIf { it.isNotBlank() }
                         )
                     },
-                    modelId = { _uiState.value.selectedModel?.id ?: "local-model" }
+                    modelId = {
+                        _uiState.value.selectedModel?.name
+                            ?: _uiState.value.selectedModel?.id
+                            ?: "local-gguf"
+                    }
                 )
                 withContext(Dispatchers.IO) { server.start() }
                 httpServer = server
@@ -381,9 +386,11 @@ class ChatViewModel(
                     )
                 }
                 systemMsg(
-                    "🌐 HTTP-сервер запущен (порт $usePort)\n" +
+                    "🌐 HTTP-сервер запущен на 0.0.0.0:$usePort\n" +
                         "OpenAI base URL:\n$ipLine\n" +
-                        "Эндпоинты: /v1/models , /v1/chat/completions"
+                        "Проверка: GET /health · GET /v1/models\n" +
+                        "Чат: POST /v1/chat/completions\n" +
+                        "Пример: curl -s http://IP:$usePort/v1/models"
                 )
             } catch (e: Exception) {
                 AppLogger.e("ChatVM", "startHttpServer failed: ${e.message}", e)
