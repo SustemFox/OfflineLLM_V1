@@ -114,7 +114,9 @@ class LlmHttpServer(
     private val generate: suspend (userPrompt: String, systemPrompt: String, maxTokens: Int) -> Flow<String> =
         { _, _, _ -> emptyFlow() },
     private val nCtxHint: () -> Int = { 2048 },
-    private val modelId: () -> String = { "unknown" }
+    private val modelId: () -> String = { "unknown" },
+    private val cancelGenerate: () -> Unit = {},
+    private val defaultMaxTokens: () -> Int = { 256 }
 ) {
     private var server: ApplicationEngine? = null
     private val jsonEngine = Json {
@@ -190,11 +192,12 @@ class LlmHttpServer(
         val mid = modelId()
         try {
             if (!busy.compareAndSet(false, true)) {
+                AppLogger.d("HttpServer", "429 busy")
                 call.respondText(
                     status = HttpStatusCode.TooManyRequests,
                     contentType = ContentType.Application.Json,
                     text = jsonEngine.encodeToString(
-                        ErrorBody(ErrorDetail("Model is busy generating another response", type = "server_error", code = "busy"))
+                        ErrorBody(ErrorDetail("Model busy — wait or cancel prior request (long CPU prefill on big system prompts)", type = "server_error", code = "busy"))
                     )
                 )
                 return
@@ -239,7 +242,7 @@ class LlmHttpServer(
                 return
             }
             val nctx = nCtxHint().coerceAtLeast(512)
-            val charBudget = (nctx * 3).coerceAtLeast(1500)
+            val charBudget = (nctx * 2).coerceAtLeast(1200) // ~2 chars/token; leave headroom for reply
             val (userPrompt, systemPrompt, wasTrimmed) = trimForBudget(userPrompt0, systemPrompt0, charBudget)
             if (wasTrimmed) {
                 AppLogger.d(
@@ -248,7 +251,7 @@ class LlmHttpServer(
                 )
             }
             val modelName = req.model.ifBlank { mid }
-            val maxTok = if (req.max_tokens <= 0) -1 else req.max_tokens.coerceIn(1, 2048)
+            val maxTok = if (req.max_tokens <= 0) defaultMaxTokens().coerceIn(16, 2048) else req.max_tokens.coerceIn(1, 2048)
             AppLogger.d(
                 "HttpServer",
                 "gen model=$modelName stream=${req.stream} maxTok=$maxTok sys=${systemPrompt.length} user=${userPrompt.length} msgs=${req.messages.size}"
@@ -323,7 +326,13 @@ class LlmHttpServer(
             } else {
                 // Non-stream: last snapshot wins (emissions are full cleaned text, not deltas)
                 var last = ""
-                flow.collect { snap -> last = snap }
+                try {
+                    flow.collect { snap -> last = snap }
+                } catch (t: Throwable) {
+                    AppLogger.e("HttpServer", "collect aborted: ${t.message}")
+                    try { cancelGenerate() } catch (_: Throwable) {}
+                    throw t
+                }
                 if (last.startsWith("ERROR:")) {
                     AppLogger.e("HttpServer", "gen $last")
                     call.respondText(
@@ -368,6 +377,7 @@ class LlmHttpServer(
             } catch (_: Throwable) {
             }
         } finally {
+            try { cancelGenerate() } catch (_: Throwable) {}
             busy.set(false)
         }
     }
@@ -389,16 +399,26 @@ class LlmHttpServer(
     companion object {
         
         fun trimForBudget(user: String, system: String, budgetChars: Int): Triple<String, String, Boolean> {
-            val sysLen = system.length
-            val roomForUser = (budgetChars - sysLen - 64).coerceAtLeast(budgetChars / 2)
-            if (user.length <= roomForUser) return Triple(user, system, false)
-            var start = user.length - roomForUser
-            if (start < 0) start = 0
-            val nl = user.indexOf('\n', start)
-            if (nl in start until (start + 200)) start = nl + 1
-            val trimmedUser = "…[earlier messages truncated to fit n_ctx]…\n" +
-                user.substring(start.coerceAtMost(user.length))
-            return Triple(trimmedUser, system, true)
+            val budget = budgetChars.coerceAtLeast(800)
+            val maxSys = (budget * 2 / 5).coerceAtLeast(500)
+            val maxUser = (budget - maxSys - 64).coerceAtLeast(budget / 3)
+            var sys = system
+            var usr = user
+            var trimmed = false
+            if (sys.length > maxSys) {
+                val head = (maxSys * 2 / 5).coerceAtLeast(180)
+                val tail = (maxSys - head - 32).coerceAtLeast(180)
+                sys = sys.take(head) + "\n…[system truncated for n_ctx]…\n" + sys.takeLast(tail)
+                trimmed = true
+            }
+            if (usr.length > maxUser) {
+                var start = (usr.length - maxUser).coerceAtLeast(0)
+                val nl = usr.indexOf('\n', start)
+                if (nl in start until (start + 200)) start = nl + 1
+                usr = "…[earlier truncated]…\n" + usr.substring(start.coerceAtMost(usr.length))
+                trimmed = true
+            }
+            return Triple(usr, sys, trimmed)
         }
 
         /**
