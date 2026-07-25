@@ -190,9 +190,10 @@ class LlmHttpServer(
         val started = System.currentTimeMillis()
         val id = "chatcmpl-${UUID.randomUUID().toString().replace("-", "").take(24)}"
         val mid = modelId()
+        var holdsBusy = false
         try {
             if (!busy.compareAndSet(false, true)) {
-                AppLogger.d("HttpServer", "429 busy")
+                AppLogger.d("HttpServer", "429 busy (not cancelling in-flight)")
                 call.respondText(
                     status = HttpStatusCode.TooManyRequests,
                     contentType = ContentType.Application.Json,
@@ -202,6 +203,7 @@ class LlmHttpServer(
                 )
                 return
             }
+            holdsBusy = true
             val text = try {
                 call.receiveText()
             } catch (t: Throwable) {
@@ -377,8 +379,10 @@ class LlmHttpServer(
             } catch (_: Throwable) {
             }
         } finally {
-            try { cancelGenerate() } catch (_: Throwable) {}
-            busy.set(false)
+            if (holdsBusy) {
+                try { cancelGenerate() } catch (_: Throwable) {}
+                busy.set(false)
+            }
         }
     }
 
