@@ -7,15 +7,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -45,13 +48,11 @@ fun ChatScreen(
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
-    // Only key on size + generating flag — not every token text (was janking main during stream)
     LaunchedEffect(state.messages.size, state.isGenerating) {
         if (state.messages.isNotEmpty()) {
             listState.animateScrollToItem(state.messages.lastIndex)
         }
     }
-    // Occasional scroll while streaming without animating every char
     LaunchedEffect(state.isGenerating, state.messages.lastOrNull()?.text?.length?.div(64)) {
         if (state.isGenerating && state.messages.isNotEmpty()) {
             listState.scrollToItem(state.messages.lastIndex)
@@ -201,6 +202,26 @@ fun ChatScreen(
                 }
             }
 
+            if (state.isGenerating) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 0.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilledTonalButton(onClick = { viewModel.cancelGeneration() }) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Остановить")
+                    }
+                }
+            }
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -216,24 +237,29 @@ fun ChatScreen(
                         Text(
                             when {
                                 state.isLoading -> "Загрузка модели…"
+                                state.isGenerating -> "Генерация… можно «Остановить»"
                                 !state.isRealEngine -> "Сначала выбери скачанную модель в ⚙"
                                 else -> "Сообщение…"
                             }
                         )
                     },
                     maxLines = 5,
-                    enabled = canType
+                    enabled = canType && !state.isGenerating
                 )
                 Spacer(Modifier.width(8.dp))
-                IconButton(
-                    onClick = { viewModel.sendMessage(state.inputText) },
-                    enabled = !state.isGenerating &&
-                        !state.isLoading &&
-                        state.inputText.isNotBlank()
-                ) {
-                    if (state.isGenerating) {
-                        CircularProgressIndicator(modifier = Modifier.padding(4.dp))
-                    } else {
+                if (state.isGenerating) {
+                    IconButton(onClick = { viewModel.cancelGeneration() }) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Остановить генерацию",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                } else {
+                    IconButton(
+                        onClick = { viewModel.sendMessage(state.inputText) },
+                        enabled = !state.isLoading && state.inputText.isNotBlank()
+                    ) {
                         Icon(Icons.Default.Send, contentDescription = "Send")
                     }
                 }
