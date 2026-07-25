@@ -130,9 +130,21 @@ object LlamaBridge {
 
     @JvmStatic external fun getLoadedGpuLayers(contextPtr: Long): Int
 
+    /** Ask in-flight generate_loop to stop after the current token. */
+    @JvmStatic external fun requestCancel()
+
     @JvmStatic external fun benchmark(contextPtr: Long, pp: Int, tg: Int): String
 
     fun interface TokenCallback {
         fun onToken(token: String)
+    }
+
+    fun requestCancelSafe() {
+        if (!loaded) return
+        try {
+            requestCancel()
+        } catch (t: Throwable) {
+            AppLogger.e("LlamaBridge", "requestCancel: ${t.message}")
+        }
     }
 }
