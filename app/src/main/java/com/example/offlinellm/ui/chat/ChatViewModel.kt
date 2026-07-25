@@ -101,7 +101,9 @@ class ChatViewModel(
             sender = Message.Sender.SYSTEM
         )
         val history = ChatHistoryStore.load(application)
-        val messages = if (history.isEmpty()) listOf(welcome) else history
+        val messages = ensureUniqueMessageIds(
+            if (history.isEmpty()) listOf(welcome) else history
+        )
         val app = application
 
         _uiState.value = ChatUiState(
@@ -281,7 +283,12 @@ class ChatViewModel(
             var lastUiMs = 0L
             var pendingRaw: String? = null
             try {
+                // One stable id for the whole stream — avoids LazyColumn duplicate-key crash
+                // if two flushes race before the first addMessage.
                 withContext(Dispatchers.Main) {
+                    val shell = Message(text = "", sender = Message.Sender.LLM)
+                    assistantMessage = shell
+                    addMessage(shell, persist = false)
                     updateState { copy(isGenerating = true) }
                 }
 
@@ -293,17 +300,12 @@ class ChatViewModel(
                     }
                     lastUiMs = now
                     pendingRaw = null
-                    // Parse off main, only state write on Main
-                    val base = assistantMessage ?: Message(text = "", sender = Message.Sender.LLM)
+                    val base = assistantMessage
+                        ?: Message(text = "", sender = Message.Sender.LLM)
                     val parsed = applyParsedToMessage(raw, base)
+                    assistantMessage = parsed
                     withContext(Dispatchers.Main) {
-                        if (assistantMessage == null) {
-                            assistantMessage = parsed
-                            addMessage(parsed, persist = false)
-                        } else {
-                            assistantMessage = parsed
-                            updateLastMessage(parsed, persist = false)
-                        }
+                        updateLastMessage(parsed, persist = false)
                     }
                 }
 
@@ -809,17 +811,44 @@ class ChatViewModel(
     }
 
     private fun addMessage(message: Message, persist: Boolean = true) {
-        updateState { copy(messages = messages + message) }
+        val existing = _uiState.value.messages
+        val msg = if (existing.any { it.id == message.id }) {
+            message.copy(id = java.util.UUID.randomUUID().toString())
+        } else message
+        updateState { copy(messages = messages + msg) }
         if (persist) scheduleSaveHistory()
     }
 
     private fun updateLastMessage(message: Message, persist: Boolean = true) {
         val messages = _uiState.value.messages.toMutableList()
-        if (messages.isNotEmpty()) {
-            messages[messages.lastIndex] = message
-            updateState { copy(messages = messages) }
+        if (messages.isEmpty()) {
+            addMessage(message, persist)
+            return
         }
+        // Prefer replace by id (streaming assistant); fall back to last row
+        val idx = messages.indexOfLast { it.id == message.id }.let { if (it >= 0) it else messages.lastIndex }
+        messages[idx] = message
+        // Belt: collapse any accidental duplicate ids
+        updateState { copy(messages = ensureUniqueMessageIds(messages)) }
         if (persist) scheduleSaveHistory()
+    }
+
+    private fun ensureUniqueMessageIds(list: List<Message>): List<Message> {
+        if (list.size <= 1) return list
+        val seen = HashSet<String>(list.size)
+        var changed = false
+        val out = ArrayList<Message>(list.size)
+        for (m in list) {
+            if (seen.add(m.id)) {
+                out.add(m)
+            } else {
+                changed = true
+                val nid = java.util.UUID.randomUUID().toString()
+                seen.add(nid)
+                out.add(m.copy(id = nid))
+            }
+        }
+        return if (changed) out else list
     }
 
     private fun scheduleSaveHistory() {
