@@ -163,6 +163,10 @@ class LlamaInferenceEngine(
         LlamaBridge.benchmark(contextPtr, pp, tg)
     }
 
+    fun cancel() {
+        LlamaBridge.requestCancelSafe()
+    }
+
     private fun ensureLoaded() {
         if (contextPtr == 0L) {
             throw IllegalStateException("Engine not loaded. Call load() first.")
