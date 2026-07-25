@@ -27,6 +27,7 @@ import com.example.offlinellm.domain.model.Message
 import com.example.offlinellm.domain.model.ResponseParser
 import com.example.offlinellm.llama.ModelLoader
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -244,6 +245,24 @@ class ChatViewModel(
         streamAssistantResponse(trimmed)
     }
 
+    /** Stop in-flight chat generation (UI + native loop). */
+    fun cancelGeneration() {
+        if (!_uiState.value.isGenerating && genJob == null) return
+        AppLogger.d("ChatVM", "cancelGeneration")
+        try {
+            (AppProvider.llmRepository as? LocalLlmRepository)?.cancelGeneration()
+        } catch (_: Throwable) {
+        }
+        try {
+            com.example.offlinellm.llama.LlamaBridge.requestCancelSafe()
+        } catch (_: Throwable) {
+        }
+        genJob?.cancel()
+        genJob = null
+        updateState { copy(isGenerating = false) }
+        systemMsg("⏹ Генерация остановлена.")
+    }
+
     private fun applyParsedToMessage(raw: String, base: Message): Message {
         val parts = ResponseParser.parse(raw, _uiState.value.showThinking)
         return base.copy(
@@ -305,6 +324,9 @@ class ChatViewModel(
                     }
                 // final frame
                 pendingRaw?.let { flushUi(it, force = true) }
+            } catch (ce: CancellationException) {
+                AppLogger.d("ChatVM", "stream cancelled")
+                throw ce
             } catch (t: Throwable) {
                 AppLogger.e("ChatVM", "streamAssistantResponse failed: ${t.message}", t)
                 withContext(Dispatchers.Main) {
