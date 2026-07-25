@@ -380,12 +380,12 @@ class ChatViewModel(
                     host = "0.0.0.0",
                     generate = { userPrompt, systemPrompt, maxTokensOverride ->
                         applyLiveSampling()
-                        if (maxTokensOverride > 0) {
-                            try {
-                                (AppProvider.llmRepository as? LocalLlmRepository)
-                                    ?.applyMaxTokensOverride(maxTokensOverride)
-                            } catch (_: Throwable) {
-                            }
+                        val mt = if (maxTokensOverride > 0) maxTokensOverride
+                        else AppPreferences.getMaxTokens(application)
+                        try {
+                            (AppProvider.llmRepository as? LocalLlmRepository)
+                                ?.applyMaxTokensOverride(mt.coerceIn(16, 2048))
+                        } catch (_: Throwable) {
                         }
                         AppProvider.llmRepository.generateResponse(
                             userPrompt,
@@ -393,6 +393,15 @@ class ChatViewModel(
                         )
                     },
                     nCtxHint = { _uiState.value.nCtx },
+                    cancelGenerate = {
+                        try {
+                            (AppProvider.llmRepository as? LocalLlmRepository)?.cancelGeneration()
+                        } catch (_: Throwable) {}
+                        try {
+                            com.example.offlinellm.llama.LlamaBridge.requestCancelSafe()
+                        } catch (_: Throwable) {}
+                    },
+                    defaultMaxTokens = { AppPreferences.getMaxTokens(application) },
                     modelId = {
                         _uiState.value.selectedModel?.name
                             ?: _uiState.value.selectedModel?.id
