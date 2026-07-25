@@ -90,6 +90,14 @@ class LocalLlmRepository(
         return AppPreferences.getSystemPrompt(context)
     }
 
+    fun cancelGeneration() {
+        try {
+            engine.cancel()
+        } catch (t: Throwable) {
+            AppLogger.e("LocalLlm", "cancel: ${t.message}")
+        }
+    }
+
     suspend fun release() {
         if (loaded) {
             engine.release()
