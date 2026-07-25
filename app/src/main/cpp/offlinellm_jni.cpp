@@ -597,10 +597,18 @@ static std::string generate_loop(
           n_tok, n_ctx, max_new_budget, system.size(), user.size());
 
     for (int i = 0; i < n_tok; ++i) {
+        if (g_cancel_generate.load(std::memory_order_relaxed)) {
+            ALOGI("generate cancelled during prompt prefill at %d/%d", i, n_tok);
+            return "ERROR: cancelled";
+        }
         llama_batch batch = llama_batch_get_one(&tokens[(size_t)i], 1);
         if (llama_decode(handle->ctx, batch) != 0) {
             ALOGE("prompt decode fail at %d/%d", i, n_tok);
             return "ERROR: prompt decode failed";
+        }
+        // periodic log on huge prompts so HTTP hangs are diagnosable
+        if (n_tok > 256 && (i % 128) == 0) {
+            ALOGI("prefill %d/%d tokens", i, n_tok);
         }
     }
 
