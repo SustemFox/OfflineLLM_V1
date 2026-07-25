@@ -50,7 +50,11 @@ internal fun LlmTab(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Ускоритель: Auto/CPU стабильно. OpenCL = эксп. GPU. Vulkan отключён в этой сборке (краш Adreno CreateFence).",
+                    "Ускоритель — куда класть слои модели. " +
+                        "Auto/CPU = только процессор (стабильно, предсказуемая скорость). " +
+                        "OpenCL = попытка GPU offload (на Adreno часто без выигрыша или нестабильно). " +
+                        "Vulkan в этой сборке вырезан (краши драйвера). " +
+                        "Смена ускорителя и GPU layers требует снова «Выбрать» модель.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -74,17 +78,43 @@ internal fun LlmTab(
         item(key = "sampling") {
             SettingsCard(
                 title = "Сэмплинг",
-                subtitle = "Применяется к следующим ответам сразу"
+                subtitle = "На качество и длину ответа. Применяется сразу (без перезагрузки модели)"
             ) {
                 Text("Temperature: ${"%.2f".format(state.temperature)}")
+                Text(
+                    "Случайность выбора токенов. Ниже (0.1–0.4) — суше, предсказуемее, меньше «воды». " +
+                        "Выше (0.8–1.2) — креативнее, но больше бреда и риска зацикливания. " +
+                        "⚡ На скорость токенов почти не влияет (только качество).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Slider(
                     value = state.temperature,
                     onValueChange = cb.onTemperature,
                     valueRange = 0.05f..1.5f
                 )
+
+                Spacer(Modifier.height(8.dp))
                 Text("Top-p: ${"%.2f".format(state.topP)}")
+                Text(
+                    "Nucleus sampling: из скольки «вероятностной массы» брать кандидатов. " +
+                        "0.7–0.9 обычно достаточно. Очень низкий top-p ≈ более жёсткий/скучный стиль. " +
+                        "⚡ На скорость почти не влияет.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Slider(value = state.topP, onValueChange = cb.onTopP, valueRange = 0.1f..1f)
+
+                Spacer(Modifier.height(8.dp))
                 Text("Max tokens: ${state.maxTokens}")
+                Text(
+                    "Жёсткий потолок длины ответа (в токенах ≈ кусках слова). " +
+                        "Меньше = короче ответ и быстрее конец генерации. " +
+                        "⚡ Сильно влияет на время: 4B CPU ~0.5–3 tok/s на OP7 — " +
+                        "128 tok ≈ десятки секунд, 512 tok ≈ минуты. HTTP API может переопределить max_tokens.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Slider(
                     value = state.maxTokens.toFloat(),
                     onValueChange = { cb.onMaxTokens(it.roundToInt()) },
@@ -97,15 +127,31 @@ internal fun LlmTab(
         item(key = "penalties") {
             SettingsCard(
                 title = "Анти-повтор",
-                subtitle = "Снижает зацикливание ответов"
+                subtitle = "Против зацикливания абзацев (часто на маленьких моделях)"
             ) {
                 Text("Repeat penalty: ${"%.2f".format(state.repeatPenalty)}")
+                Text(
+                    "Штраф за повтор недавних токенов. 1.0 = выкл. 1.15–1.35 обычно ок. " +
+                        "Слишком высоко — ломает нормальные повторы (имена, списки). " +
+                        "⚡ На скорость почти не влияет.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Slider(
                     value = state.repeatPenalty,
                     onValueChange = cb.onRepeatPenalty,
                     valueRange = 1.0f..1.5f
                 )
+
+                Spacer(Modifier.height(8.dp))
                 Text("Frequency penalty: ${"%.2f".format(state.frequencyPenalty)}")
+                Text(
+                    "Доп. штраф за часто встречавшиеся в ответе токены (глобальнее repeat). " +
+                        "0 = выкл. 0.1–0.35 помогает от «каши»-петель. " +
+                        "⚡ На скорость почти не влияет.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Slider(
                     value = state.frequencyPenalty,
                     onValueChange = cb.onFrequencyPenalty,
@@ -117,25 +163,48 @@ internal fun LlmTab(
         item(key = "engine") {
             SettingsCard(
                 title = "Движок",
-                subtitle = "n_ctx и потоки — после «Выбрать» модели заново"
+                subtitle = "n_ctx / потоки / GPU layers — после смены снова «Выбрать» модель"
             ) {
                 Text("n_ctx: ${state.nCtx}")
+                Text(
+                    "Размер контекстного окна (промпт + ответ в токенах). " +
+                        "Больше = длиннее system/история/HTTP-диалоги влезают, но " +
+                        "больше RAM и чуть медленнее prefill (обработка входа). " +
+                        "⚡ 2048 быстрее и легче; 4096 удобнее для API; 8192 на 4B+телефоне может не влезть в память. " +
+                        "На скорость каждого нового токена влияет слабее, чем max tokens.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Slider(
                     value = state.nCtx.toFloat(),
                     onValueChange = { cb.onNCtx((it / 256f).roundToInt() * 256) },
-                    valueRange = 512f..4096f,
-                    steps = 13
+                    valueRange = 512f..8192f,
+                    steps = 29
                 )
+
+                Spacer(Modifier.height(8.dp))
                 Text("Потоки CPU: ${state.threads}")
+                Text(
+                    "Сколько ядер CPU крутить decode. " +
+                        "На 8-ядерном SD855 обычно 4–6: больше не всегда быстрее (нагрев/троттлинг). " +
+                        "⚡ Прямо влияет на tok/s на CPU. 1 = медленно; 6–8 = максимум, но греется.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Slider(
                     value = state.threads.toFloat(),
                     onValueChange = { cb.onThreads(it.roundToInt()) },
                     valueRange = 1f..8f,
                     steps = 6
                 )
-                Text("GPU layers (OpenCL/Vulkan offload): ${state.nGpuLayers}")
+
+                Spacer(Modifier.height(8.dp))
+                Text("GPU layers (OpenCL offload): ${state.nGpuLayers}")
                 Text(
-                    "0 = только CPU; 99 ≈ все слои. Нужен повторный «Выбрать».",
+                    "Сколько слоёв модели пытаться отдать GPU при OpenCL. " +
+                        "0 = только CPU. 99 ≈ «все, что получится». " +
+                        "На многих Adreno offload не даёт ускорения или падает — тогда оставь 0 / Auto. " +
+                        "⚡ Если GPU реально работает — может ускорить; если нет — только риск и время на init.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -158,7 +227,10 @@ internal fun LlmTab(
                     Column(Modifier.weight(1f)) {
                         Text("Блок мышления", style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            "Показывать <think>…</think> в чате",
+                            "Показывать текст мышления модели в чате (если модель его пишет). " +
+                                "Выкл — в пузыре только финальный ответ. " +
+                                "⚡ На скорость генерации не влияет (только UI). " +
+                                "В system лучше держать /no_think, чтобы Qwen3.5 не тратил max tokens на think.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -170,12 +242,26 @@ internal fun LlmTab(
                     value = state.systemPrompt,
                     onValueChange = cb.onSystemPrompt,
                     label = { Text("System prompt") },
+                    supportingText = {
+                        Text(
+                            "Инструкция «кто ты». Длинный system + история едят n_ctx и " +
+                                "замедляют prefill (старт ответа). Для скорости — коротко + /no_think."
+                        )
+                    },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
                     maxLines = 10
                 )
             }
         }
 
-        item { Spacer(Modifier.height(16.dp)) }
+        item {
+            Text(
+                "Итого по скорости на телефоне: сильнее всего — размер модели, max tokens, " +
+                    "потоки CPU и длина промпта (n_ctx/system). Temperature/top-p/penalty — про стиль.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(Modifier.height(16.dp))
+        }
     }
 }
