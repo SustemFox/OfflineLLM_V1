@@ -1,4 +1,4 @@
-// ci-trigger: dupkey-fix-20260725
+// ci-trigger: http-cancel-20260725c
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
@@ -13,8 +13,8 @@ android {
         applicationId 'com.example.offlinellm'
         minSdk 28
         targetSdk 34
-        versionCode 28
-        versionName '1.6.8-dupkey-fix'
+        versionCode 29
+        versionName '1.6.9-http-cancel'
 
         ndk {
             abiFilters 'arm64-v8a'
