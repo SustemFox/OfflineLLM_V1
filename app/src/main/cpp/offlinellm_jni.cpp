@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <atomic>
 #include <string>
 #include <vector>
 #include <csetjmp>
@@ -37,6 +38,8 @@
 #endif
 
 static std::once_flag g_backend_once;
+/** Cooperative cancel for in-flight generate_loop (chat stop button). */
+static std::atomic<bool> g_cancel_generate{false};
 
 struct ContextHandle {
     llama_model * model = nullptr;
@@ -541,6 +544,7 @@ static std::string generate_loop(
     if (!handle->ctx || !handle->model || !handle->vocab) {
         return "ERROR: null context";
     }
+    g_cancel_generate.store(false, std::memory_order_relaxed);
 
     clear_memory(handle->ctx);
 
@@ -620,6 +624,10 @@ static std::string generate_loop(
     bool stopped_loop = false;
 
     for (int step = 0; step < max_new; ++step) {
+        if (g_cancel_generate.load(std::memory_order_relaxed)) {
+            ALOGI("generate cancelled at step %d", step);
+            break;
+        }
         if (n_cur >= n_ctx - 2) break;
 
         llama_token id = llama_sampler_sample(smpl, handle->ctx, -1);
@@ -762,6 +770,13 @@ Java_com_example_offlinellm_llama_LlamaBridge_benchmark(
 #endif
         + OFFLINELLM_LLAMA_TAG + ")";
     return env->NewStringUTF(s.c_str());
+}
+
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_example_offlinellm_llama_LlamaBridge_requestCancel(JNIEnv *, jclass) {
+    g_cancel_generate.store(true, std::memory_order_relaxed);
+    ALOGI("requestCancel");
 }
 
 extern "C" JNIEXPORT jint JNICALL
