@@ -15,6 +15,7 @@ object ChatHistoryStore {
             val f = File(context.filesDir, FILE)
             if (!f.exists()) return emptyList()
             val arr = JSONArray(f.readText())
+            val seen = HashSet<String>()
             buildList {
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
@@ -23,9 +24,14 @@ object ChatHistoryStore {
                         "LLM" -> Message.Sender.LLM
                         else -> Message.Sender.SYSTEM
                     }
+                    var id = o.optString("id", "")
+                    if (id.isBlank() || !seen.add(id)) {
+                        id = java.util.UUID.randomUUID().toString()
+                        seen.add(id)
+                    }
                     add(
                         Message(
-                            id = o.optString("id", java.util.UUID.randomUUID().toString()),
+                            id = id,
                             text = o.optString("text"),
                             sender = sender,
                             timestamp = o.optLong("timestamp", System.currentTimeMillis()),
