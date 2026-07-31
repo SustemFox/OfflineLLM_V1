@@ -12,6 +12,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.offlinellm.data.local.AppLogger
 import com.example.offlinellm.data.local.AppPreferences
+import com.example.offlinellm.data.local.RootDeviceProbe
+import com.example.offlinellm.data.local.RootShell
 import com.example.offlinellm.data.local.ChatHistoryStore
 import com.example.offlinellm.data.local.ModelsDirectoryManager
 import com.example.offlinellm.data.local.NetworkUtils
@@ -129,6 +131,11 @@ class ChatViewModel(
             repeatPenalty = AppPreferences.getRepeatPenalty(app),
             frequencyPenalty = AppPreferences.getFrequencyPenalty(app),
             nGpuLayers = AppPreferences.getNGpuLayers(app),
+            rootModeEnabled = AppPreferences.isRootModeEnabled(app),
+            rootSuPresent = RootShell.isSuPresent(),
+            rootGranted = RootShell.isRootGranted(),
+            rootDirectPath = AppPreferences.getRootDirectModelPath(app),
+            rootSkipMaterialize = AppPreferences.isRootSkipMaterialize(app),
         )
 
         val filter = IntentFilter(ModelDownloadService.ACTION_PROGRESS)
@@ -707,7 +714,12 @@ class ChatViewModel(
         // getModelPath may materialize ~500MB from SAF → must NOT run on main (ANR)
         viewModelScope.launch {
             updateState { copy(isLoading = true) }
-            systemMsg("Подготовка файла модели (кэш)…")
+            systemMsg(
+                if (AppPreferences.isRootModeEnabled(application) &&
+                    AppPreferences.isRootSkipMaterialize(application)
+                ) "Подготовка модели (root: пробуем прямой путь)…"
+                else "Подготовка файла модели (кэш)…"
+            )
             val path = try {
                 withContext(Dispatchers.IO) {
                     AppProvider.modelRepository.getModelPath(model.id)
@@ -898,6 +910,86 @@ class ChatViewModel(
                 loadModels()
             }
         }
+    }
+
+
+    fun setRootModeEnabled(enabled: Boolean) {
+        AppPreferences.setRootModeEnabled(application, enabled)
+        updateState {
+            copy(
+                rootModeEnabled = enabled,
+                rootSuPresent = RootShell.isSuPresent(),
+                rootGranted = RootShell.isRootGranted()
+            )
+        }
+        if (enabled) {
+            systemMsg(
+                "Root-режим: opt-in. Запроси root и укажи абсолютный путь к GGUF " +
+                    "(или path hint SAF). NPU/Vulkan этим не включаются."
+            )
+        }
+        loadModels()
+    }
+
+    fun setRootDirectPath(path: String) {
+        updateState { copy(rootDirectPath = path) }
+        AppPreferences.setRootDirectModelPath(application, path)
+    }
+
+    fun setRootSkipMaterialize(v: Boolean) {
+        AppPreferences.setRootSkipMaterialize(application, v)
+        updateState { copy(rootSkipMaterialize = v) }
+    }
+
+    fun requestRootAccess() {
+        viewModelScope.launch(Dispatchers.IO) {
+            withContext(Dispatchers.Main) { updateState { copy(rootBusy = true) } }
+            RootShell.clearCache()
+            val ok = RootShell.ensureRoot()
+            withContext(Dispatchers.Main) {
+                updateState {
+                    copy(
+                        rootBusy = false,
+                        rootSuPresent = RootShell.isSuPresent(),
+                        rootGranted = ok
+                    )
+                }
+                systemMsg(if (ok) "✅ Root выдан (su id uid=0)." else "❌ Root не выдан / нет su.")
+            }
+        }
+    }
+
+    fun runRootProbe() {
+        viewModelScope.launch(Dispatchers.IO) {
+            withContext(Dispatchers.Main) { updateState { copy(rootBusy = true) } }
+            val text = try {
+                RootDeviceProbe.run(includeRoot = AppPreferences.isRootModeEnabled(application))
+            } catch (t: Throwable) {
+                "probe failed: ${t.message}"
+            }
+            AppLogger.d("Root", "probe done ${text.length} chars")
+            withContext(Dispatchers.Main) {
+                updateState {
+                    copy(
+                        rootBusy = false,
+                        rootProbeText = text,
+                        rootSuPresent = RootShell.isSuPresent(),
+                        rootGranted = RootShell.isRootGranted()
+                    )
+                }
+            }
+        }
+    }
+
+    fun useSafPathAsRootDirect() {
+        val hint = ModelsDirectoryManager.getCustomPath(application).orEmpty()
+        if (hint.isBlank()) {
+            systemMsg("SAF path hint пуст — сначала выбери папку моделей.")
+            return
+        }
+        setRootDirectPath(hint)
+        systemMsg("Root path = $hint")
+        loadModels()
     }
 
     fun resetStoragePath() {
