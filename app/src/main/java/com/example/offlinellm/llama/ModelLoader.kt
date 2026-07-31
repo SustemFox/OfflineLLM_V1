@@ -2,6 +2,8 @@ package com.example.offlinellm.llama
 
 import android.content.Context
 import com.example.offlinellm.data.local.AppLogger
+import com.example.offlinellm.data.local.AppPreferences
+import com.example.offlinellm.data.local.RootShell
 import com.example.offlinellm.data.local.ModelsDirectoryManager
 import java.io.File
 import java.net.URLDecoder
@@ -23,13 +25,31 @@ object ModelLoader {
         ModelsDirectoryManager.getModelsDirectory(context)
 
     fun scanLocalModels(context: Context): List<GgufModelInfo> {
+        // Root experimental: also scan absolute dir (may see files SAF already lists)
+        val rootExtra = mutableListOf<GgufModelInfo>()
+        if (AppPreferences.isRootModeEnabled(context)) {
+            val dir = AppPreferences.getRootDirectModelPath(context).ifBlank {
+                ModelsDirectoryManager.getCustomPath(context).orEmpty()
+            }
+            if (dir.isNotBlank()) {
+                val listed = RootShell.listGguf(dir)
+                AppLogger.d("ModelLoader", "root direct scan $dir -> ${listed.size} gguf")
+                listed.forEach { (name, size) ->
+                    val path = dir.trimEnd('/') + "/" + name
+                    rootExtra += parseModelName(name, size, filePath = path)
+                }
+            }
+        }
+
         if (ModelsDirectoryManager.isSafMode(context)) {
             val docs = ModelsDirectoryManager.listGguf(context)
             AppLogger.d("ModelLoader", "Scanning SAF: ${docs.size} gguf")
-            return docs.mapNotNull { doc ->
+            val saf = docs.mapNotNull { doc ->
                 val name = doc.name ?: return@mapNotNull null
-                parseModelName(name, doc.length(), filePath = "")
-            }.sortedByDescending { it.fileSizeBytes }
+                val direct = ModelsDirectoryManager.resolveDirectNativePath(context, name)
+                parseModelName(name, doc.length(), filePath = direct?.absolutePath ?: "")
+            }
+            return (saf + rootExtra).distinctBy { it.id }.sortedByDescending { it.fileSizeBytes }
         }
 
         val modelsDir = getModelsDirectory(context)
