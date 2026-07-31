@@ -270,7 +270,50 @@ object ModelsDirectoryManager {
      * Ensure a real filesystem path for llama mmap.
      * If SAF mode: copy document → filesDir/models_cache/<fileName> when missing/size mismatch.
      */
+
+    /**
+     * When experimental root mode is on, try a real filesystem path the app can mmap
+     * without copying SAF → models_cache (saves time and flash wear on multi‑GB GGUF).
+     *
+     * Order: explicit root dir, SAF path hint, legacy custom path.
+     * Optionally chmod a+r via su so the unprivileged app can open the file.
+     */
+    fun resolveDirectNativePath(context: Context, fileName: String): File? {
+        if (!AppPreferences.isRootModeEnabled(context)) return null
+        if (!AppPreferences.isRootSkipMaterialize(context)) return null
+        val candidates = mutableListOf<String>()
+        val rootDir = AppPreferences.getRootDirectModelPath(context).trim()
+        if (rootDir.isNotEmpty()) {
+            candidates += rootDir.trimEnd('/') + "/" + fileName
+        }
+        val hint = getCustomPath(context)
+        if (!hint.isNullOrBlank()) {
+            candidates += hint.trimEnd('/') + "/" + fileName
+        }
+        val custom = prefs(context).getString(KEY_CUSTOM_PATH, null)
+        if (!custom.isNullOrBlank() && custom != hint) {
+            val f = File(custom)
+            if (f.isDirectory) candidates += f.absolutePath.trimEnd('/') + "/" + fileName
+            else if (custom.endsWith(fileName)) candidates += custom
+        }
+        for (path in candidates.distinct()) {
+            AppLogger.d("Storage", "root direct try $path")
+            if (RootShell.appCanRead(path)) {
+                AppLogger.d("Storage", "root direct HIT (app-readable) $path")
+                return File(path)
+            }
+            // try chmod via root then re-check
+            if (RootShell.isSuPresent() && RootShell.tryChmodWorldReadable(path)) {
+                AppLogger.d("Storage", "root direct HIT after chmod $path")
+                return File(path)
+            }
+        }
+        return null
+    }
+
     fun materializeForNative(context: Context, fileName: String): File? {
+        // Experimental root: skip multi‑GB SAF→cache copy when path is mmap-readable
+        resolveDirectNativePath(context, fileName)?.let { return it }
         if (!isSafMode(context)) {
             val f = File(getModelsDirectory(context), fileName)
             return f.takeIf { it.isFile && it.length() > 0L }
