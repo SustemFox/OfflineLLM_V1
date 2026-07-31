@@ -43,4 +43,10 @@ data class SettingsCallbacks(
     val onRepeatPenalty: (Float) -> Unit = {},
     val onFrequencyPenalty: (Float) -> Unit = {},
     val onNGpuLayers: (Int) -> Unit = {},
+    val onRootMode: (Boolean) -> Unit = {},
+    val onRootDirectPath: (String) -> Unit = {},
+    val onRootSkipMaterialize: (Boolean) -> Unit = {},
+    val onRootRequest: () -> Unit = {},
+    val onRootProbe: () -> Unit = {},
+    val onRootUseSafHintPath: () -> Unit = {},
 )
