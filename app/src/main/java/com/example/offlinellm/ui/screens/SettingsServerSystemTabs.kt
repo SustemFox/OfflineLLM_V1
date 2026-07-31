@@ -216,6 +216,101 @@ internal fun SystemTab(
             }
         }
 
+
+        item(key = "root") {
+            SettingsCard(
+                title = "Root (experimental)",
+                subtitle = "Ветка exp/root-mode: прямой путь к GGUF без копирования в cache. " +
+                    "Не включает NPU/Vulkan. Нужен Magisk и разрешённый su."
+            ) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Root-режим")
+                        Text(
+                            if (state.rootSuPresent) "su найден на устройстве"
+                            else "su не найден",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = state.rootModeEnabled, onCheckedChange = cb.onRootMode)
+                }
+                if (state.rootModeEnabled) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        when {
+                            state.rootGranted -> "Root: доступ есть (uid=0)"
+                            state.rootSuPresent -> "Root: ещё не выдан — нажми «Запросить root»"
+                            else -> "Root: нет su — режим только с прямым File-доступом (если SELinux пускает)"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = cb.onRootRequest,
+                        enabled = !state.rootBusy,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (state.rootBusy) "…" else "Запросить root (su)") }
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Без materialize (SAF→cache)")
+                            Text(
+                                "Если файл читается по абсолютному пути — не копировать GB в app",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = state.rootSkipMaterialize,
+                            onCheckedChange = cb.onRootSkipMaterialize
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = state.rootDirectPath,
+                        onValueChange = cb.onRootDirectPath,
+                        label = { Text("Абсолютный путь к папке GGUF") },
+                        placeholder = { Text("/storage/emulated/0/Model") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    OutlinedButton(
+                        onClick = cb.onRootUseSafHintPath,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Подставить путь из SAF (path hint)") }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = cb.onRootProbe,
+                        enabled = !state.rootBusy,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (state.rootBusy) "Probe…" else "Probe device / vendor libs") }
+                    if (state.rootProbeText.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        SelectionContainer {
+                            Text(
+                                state.rootProbeText,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier
+                                    .heightIn(max = 360.dp)
+                                    .verticalScroll(rememberScrollState())
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         item { Spacer(Modifier.height(16.dp)) }
     }
 }
