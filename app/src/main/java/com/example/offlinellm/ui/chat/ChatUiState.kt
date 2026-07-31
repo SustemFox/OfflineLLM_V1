@@ -55,4 +55,11 @@ data class ChatUiState(
     val repeatPenalty: Float = 1.15f,
     val frequencyPenalty: Float = 0.15f,
     val nGpuLayers: Int = 99,
+    val rootModeEnabled: Boolean = false,
+    val rootSuPresent: Boolean = false,
+    val rootGranted: Boolean = false,
+    val rootDirectPath: String = "",
+    val rootSkipMaterialize: Boolean = true,
+    val rootProbeText: String = "",
+    val rootBusy: Boolean = false,
 )
