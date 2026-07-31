@@ -90,6 +90,12 @@ fun AppRoot() {
                         onRepeatPenalty = viewModel::setRepeatPenalty,
                         onFrequencyPenalty = viewModel::setFrequencyPenalty,
                         onNGpuLayers = viewModel::setNGpuLayers,
+                        onRootMode = viewModel::setRootModeEnabled,
+                        onRootDirectPath = viewModel::setRootDirectPath,
+                        onRootSkipMaterialize = viewModel::setRootSkipMaterialize,
+                        onRootRequest = viewModel::requestRootAccess,
+                        onRootProbe = viewModel::runRootProbe,
+                        onRootUseSafHintPath = viewModel::useSafPathAsRootDirect,
                     ),
                 )
             }
