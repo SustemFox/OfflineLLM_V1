@@ -27,6 +27,9 @@ object AppPreferences {
     private const val KEY_REPEAT_PENALTY = "llm_repeat_penalty"
     private const val KEY_FREQ_PENALTY = "llm_freq_penalty"
     private const val KEY_N_GPU_LAYERS = "llm_n_gpu_layers"
+    private const val KEY_ROOT_MODE = "root_mode_enabled"
+    private const val KEY_ROOT_DIRECT_PATH = "root_direct_model_path"
+    private const val KEY_ROOT_SKIP_MATERIALIZE = "root_skip_materialize"
 
     const val DEFAULT_SYSTEM_PROMPT =
         "Ты краткий оффлайн-помощник. Ответь на языке пользователя одним-двумя короткими абзацами. " +
@@ -203,3 +206,30 @@ object AppPreferences {
         }
     }
 }
+
+    /** Experimental Magisk/su helpers (branch exp/root-mode). Default off. */
+    fun isRootModeEnabled(ctx: Context): Boolean =
+        p(ctx).getBoolean(KEY_ROOT_MODE, false)
+
+    fun setRootModeEnabled(ctx: Context, v: Boolean) {
+        p(ctx).edit().putBoolean(KEY_ROOT_MODE, v).apply()
+        if (!v) RootShell.clearCache()
+    }
+
+    /**
+     * Absolute dir with .gguf files, e.g. /storage/emulated/0/Model
+     * Used when root mode tries File API / chmod instead of SAF copy.
+     */
+    fun getRootDirectModelPath(ctx: Context): String =
+        p(ctx).getString(KEY_ROOT_DIRECT_PATH, "")?.trim().orEmpty()
+
+    fun setRootDirectModelPath(ctx: Context, path: String) {
+        p(ctx).edit().putString(KEY_ROOT_DIRECT_PATH, path.trim()).apply()
+    }
+
+    fun isRootSkipMaterialize(ctx: Context): Boolean =
+        p(ctx).getBoolean(KEY_ROOT_SKIP_MATERIALIZE, true)
+
+    fun setRootSkipMaterialize(ctx: Context, v: Boolean) {
+        p(ctx).edit().putBoolean(KEY_ROOT_SKIP_MATERIALIZE, v).apply()
+    }
