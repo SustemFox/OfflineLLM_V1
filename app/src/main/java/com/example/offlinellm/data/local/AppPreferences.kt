@@ -93,8 +93,6 @@ object AppPreferences {
 
     fun setAccelPref(ctx: Context, pref: String) {
         val v = if (pref == "vulkan") {
-            // Keep UI selection possible only if a future build re-enables Vulkan;
-            // for now coerce to auto so resolveNGpuLayers stays 0.
             "auto"
         } else pref
         p(ctx).edit().putString(KEY_ACCEL_PREF, v).apply()
@@ -147,7 +145,6 @@ object AppPreferences {
     fun getSystemPrompt(ctx: Context): String {
         val stored = p(ctx).getString(KEY_SYSTEM_PROMPT, null)?.takeIf { it.isNotBlank() }
             ?: return DEFAULT_SYSTEM_PROMPT
-        // Older builds forced <think> in the system prompt — breaks tiny models and leaks tags in UI
         if (stored.contains("<think>") ||
             stored.contains("</think>") ||
             stored.contains("блоке <think") ||
@@ -205,7 +202,6 @@ object AppPreferences {
             else -> 0
         }
     }
-}
 
     /** Experimental Magisk/su helpers (branch exp/root-mode). Default off. */
     fun isRootModeEnabled(ctx: Context): Boolean =
@@ -233,3 +229,4 @@ object AppPreferences {
     fun setRootSkipMaterialize(ctx: Context, v: Boolean) {
         p(ctx).edit().putBoolean(KEY_ROOT_SKIP_MATERIALIZE, v).apply()
     }
+}
