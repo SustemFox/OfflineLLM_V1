@@ -1,4 +1,4 @@
-// ci-trigger: root-exp-20260731a
+// ci-trigger: root-exp-fix-prefs-20260731
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
