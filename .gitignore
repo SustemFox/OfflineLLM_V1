@@ -10,3 +10,5 @@ tmp_gen.py
 
 # llama.cpp source fetched by CI
 app/src/main/cpp/third_party/
+*.jks
+keystore.properties
