@@ -28,7 +28,7 @@ data class ChatUiState(
     val isNativeAvailable: Boolean = false,
     val notifications: List<AppNotification> = emptyList(),
 
-    val primaryColor: Color = Color(0xFF8E44AD),
+    val primaryColor: Color = Color(0xFF4F8C8D),
     val availableModels: List<LlmModel> = emptyList(),
     val selectedModel: LlmModel? = null,
     val downloadingModelId: String? = null,
