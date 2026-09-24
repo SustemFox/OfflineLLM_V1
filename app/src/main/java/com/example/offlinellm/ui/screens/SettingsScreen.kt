@@ -38,8 +38,8 @@ fun SettingsScreen(
     callbacks: SettingsCallbacks,
     initialTab: Int = 0,
 ) {
-    var tabIndex by remember { mutableIntStateOf(initialTab.coerceIn(0, tabs.lastIndex)) }
     val tabs = SettingsTab.entries
+    var tabIndex by remember { mutableIntStateOf(initialTab.coerceIn(0, tabs.lastIndex)) }
 
     Scaffold(
         topBar = {
