@@ -29,6 +29,7 @@ data class SettingsCallbacks(
     val onHfClearSelection: () -> Unit = {},
     val onHfToggleManualUrl: () -> Unit = {},
     val onClearChat: () -> Unit = {},
+    val onClearNotifications: () -> Unit = {},
     val onAccelPref: (String) -> Unit = {},
 
     val onTemperature: (Float) -> Unit = {},

@@ -72,7 +72,8 @@ class ModelDownloadService : Service() {
             return
         }
         ensureChannel()
-        val notification = buildNotification(name, 0, indeterminate = true)
+        val notification = buildNotification(name, modelId, 0, indeterminate = true)
+
         if (Build.VERSION.SDK_INT >= 29) {
             startForeground(
                 NOTIF_ID,
@@ -103,7 +104,8 @@ class ModelDownloadService : Service() {
                         val pct = (p * 100).toInt().coerceIn(0, 100)
                         val now = System.currentTimeMillis()
                         if (now - lastNotifMs >= NOTIF_INTERVAL_MS || (pct != lastNotifPct && pct % 2 == 0)) {
-                            updateNotification(name, pct, indeterminate = p <= 0f)
+                            updateNotification(name, pct, indeterminate = p <= 0f, modelId = modelId)
+
                             lastNotifMs = now
                             lastNotifPct = pct
                         }
@@ -151,7 +153,8 @@ class ModelDownloadService : Service() {
         }
     }
 
-    private fun buildNotification(name: String, progress: Int, indeterminate: Boolean): Notification {
+    private fun buildNotification(name: String, modelId: String, progress: Int, indeterminate: Boolean): Notification {
+
         val open = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
@@ -159,7 +162,10 @@ class ModelDownloadService : Service() {
         )
         val cancel = PendingIntent.getService(
             this, 1,
-            Intent(this, ModelDownloadService::class.java).setAction(ACTION_CANCEL),
+            Intent(this, ModelDownloadService::class.java)
+                .setAction(ACTION_CANCEL)
+                .putExtra(EXTRA_MODEL_ID, modelId),
+
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val b = NotificationCompat.Builder(this, CHANNEL_ID)
@@ -180,9 +186,10 @@ class ModelDownloadService : Service() {
         return b.build()
     }
 
-    private fun updateNotification(name: String, progress: Int, indeterminate: Boolean) {
+    private fun updateNotification(name: String, progress: Int, indeterminate: Boolean, modelId: String) {
         val nm = getSystemService(NotificationManager::class.java)
-        nm.notify(NOTIF_ID, buildNotification(name, progress, indeterminate))
+        nm.notify(NOTIF_ID, buildNotification(name, modelId, progress, indeterminate))
+
     }
 
     private fun notifyDone(name: String, success: Boolean, err: String?) {

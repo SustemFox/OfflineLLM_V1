@@ -282,6 +282,7 @@ class ModelRepositoryImpl(
         onProgress: suspend (Float) -> Unit
     ): Long {
         var currentUrl = downloadUrl
+        val tokenHost = try { URL(downloadUrl).host.lowercase() } catch (_: Throwable) { "" }
         var connection: HttpURLConnection? = null
         var actualResume = resumeFrom
 
@@ -300,7 +301,7 @@ class ModelRepositoryImpl(
                     setRequestProperty("Accept", "application/octet-stream,*/*")
                     setRequestProperty("Accept-Encoding", "identity")
                     setRequestProperty("Connection", "keep-alive")
-                    if (hfToken.isNotBlank()) {
+                    if (hfToken.isNotBlank() && URL(currentUrl).host.equals(tokenHost, ignoreCase = true)) {
                         setRequestProperty("Authorization", "Bearer $hfToken")
                     }
                     if (actualResume > 0L) {

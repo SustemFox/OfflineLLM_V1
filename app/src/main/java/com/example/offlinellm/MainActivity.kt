@@ -76,6 +76,7 @@ fun AppRoot() {
                         onHfClearSelection = viewModel::clearHfSelection,
                         onHfToggleManualUrl = viewModel::toggleHfManualUrl,
                         onClearChat = viewModel::clearChat,
+                        onClearNotifications = viewModel::clearNotifications,
                         onAccelPref = viewModel::setAccelPref,
                         onTemperature = viewModel::setTemperature,
                         onTopP = viewModel::setTopP,

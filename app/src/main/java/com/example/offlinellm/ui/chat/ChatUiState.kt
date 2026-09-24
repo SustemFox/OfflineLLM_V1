@@ -11,6 +11,12 @@ import com.example.offlinellm.domain.model.Message
  * Immutable UI snapshot for chat + settings screens.
  * Kept separate from [ChatViewModel] so composables don't depend on the whole VM type.
  */
+data class AppNotification(
+    val id: Long = System.currentTimeMillis(),
+    val text: String,
+    val time: Long = id,
+)
+
 data class ChatUiState(
     val messages: List<Message> = emptyList(),
     val inputText: String = "",
@@ -19,6 +25,7 @@ data class ChatUiState(
     val isDarkMode: Boolean = true,
     val isRealEngine: Boolean = false,
     val isNativeAvailable: Boolean = false,
+    val notifications: List<AppNotification> = emptyList(),
 
     val primaryColor: Color = Color(0xFF8E44AD),
     val availableModels: List<LlmModel> = emptyList(),

@@ -88,23 +88,17 @@ class ChatViewModel(
         AppProvider.initFake(application)
         AppLogger.setEnabled(AppPreferences.isLogsEnabled(application))
 
-        val welcome = Message(
-            text = "Привет! Я твой оффлайн-помощник.\n" +
-                "📱 Движок: llama.cpp\n" +
-                "🧠 Блок мышления + настройки LLM в ⚙\n" +
-                "1) ⚙ → скачай модель\n" +
-                "2) «Выбрать»\n" +
-                "3) Пиши в чат",
-            sender = Message.Sender.SYSTEM
-        )
         val history = ChatHistoryStore.load(application)
-        val messages = ensureUniqueMessageIds(
-            if (history.isEmpty()) listOf(welcome) else history
-        )
+        val messages = ensureUniqueMessageIds(history)
         val app = application
 
         _uiState.value = ChatUiState(
             messages = messages,
+            notifications = if (history.isEmpty()) listOf(
+                AppNotification(
+                    text = "Привет! Открой настройки, скачай GGUF-модель и выбери её для запуска."
+                )
+            ) else emptyList(),
             isDarkMode = AppPreferences.isDarkMode(app),
             logsEnabled = AppPreferences.isLogsEnabled(app),
             logsPanelExpanded = AppPreferences.isLogsPanelExpanded(app),
@@ -144,7 +138,9 @@ class ChatViewModel(
     }
 
     private fun systemMsg(text: String) {
-        addMessage(Message(text = text, sender = Message.Sender.SYSTEM))
+        updateState {
+            copy(notifications = (notifications + AppNotification(text = text)).takeLast(100))
+        }
     }
 
     private fun applyLiveSampling() {
@@ -155,6 +151,10 @@ class ChatViewModel(
     }
 
     // --- models / engine ---
+
+    fun clearNotifications() {
+        updateState { copy(notifications = emptyList()) }
+    }
 
     fun refreshModels() = loadModels()
 
@@ -674,9 +674,8 @@ class ChatViewModel(
 
     fun clearChat() {
         ChatHistoryStore.clear(application)
-        updateState {
-            copy(messages = listOf(Message(text = "История очищена.", sender = Message.Sender.SYSTEM)))
-        }
+        updateState { copy(messages = emptyList()) }
+        systemMsg("История очищена.")
         scheduleSaveHistory()
     }
 

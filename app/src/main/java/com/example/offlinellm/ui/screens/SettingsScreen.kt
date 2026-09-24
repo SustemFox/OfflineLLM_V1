@@ -27,6 +27,7 @@ import com.example.offlinellm.ui.chat.ChatUiState
 private enum class SettingsTab(val title: String) {
     Models("Модели"),
     Llm("LLM"),
+    Notifications("Уведомления"),
     System("Система"),
 }
 
@@ -79,6 +80,7 @@ fun SettingsScreen(
             when (tabs[tabIndex]) {
                 SettingsTab.Models -> ModelsTab(state = state, cb = callbacks)
                 SettingsTab.Llm -> LlmTab(state = state, cb = callbacks)
+                SettingsTab.Notifications -> NotificationsTab(state = state, cb = callbacks)
                 SettingsTab.System -> SystemTab(state = state, cb = callbacks)
             }
         }
