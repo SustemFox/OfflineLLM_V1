@@ -66,19 +66,9 @@ fun ChatScreen(
                 title = {
                     Column {
                         Text("Offline LLM")
-                        val subtitle = buildString {
-                            if (state.selectedModel != null) {
-                                append(state.selectedModel.name.take(28))
-                            }
-                            if (state.isServerRunning) {
-                                if (isNotEmpty()) append(" · ")
-                                val ip = state.localIps.firstOrNull() ?: "…"
-                                append("$ip:${state.serverPort}")
-                            }
-                        }
-                        if (subtitle.isNotEmpty()) {
+                        state.selectedModel?.let {
                             Text(
-                                subtitle,
+                                it.name.take(28),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary
                             )

@@ -19,11 +19,7 @@ data class ChatUiState(
     val isDarkMode: Boolean = true,
     val isRealEngine: Boolean = false,
     val isNativeAvailable: Boolean = false,
-    val isServerRunning: Boolean = false,
-    val serverPort: Int = 8080,
-    val serverPortInput: String = "8080",
-    val localIps: List<String> = emptyList(),
-    val serverBaseUrls: List<String> = emptyList(),
+
     val primaryColor: Color = Color(0xFF8E44AD),
     val availableModels: List<LlmModel> = emptyList(),
     val selectedModel: LlmModel? = null,

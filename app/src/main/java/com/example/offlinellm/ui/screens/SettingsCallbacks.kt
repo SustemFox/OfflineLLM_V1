@@ -8,7 +8,7 @@ import com.example.offlinellm.domain.model.LlmModel
  */
 data class SettingsCallbacks(
     val onBack: () -> Unit = {},
-    val onToggleServer: (Boolean) -> Unit = {},
+
     val onDownloadModel: (LlmModel) -> Unit = {},
     val onCancelDownload: () -> Unit = {},
     val onDeleteModel: (LlmModel) -> Unit = {},
@@ -30,9 +30,7 @@ data class SettingsCallbacks(
     val onHfToggleManualUrl: () -> Unit = {},
     val onClearChat: () -> Unit = {},
     val onAccelPref: (String) -> Unit = {},
-    val onServerPortInput: (String) -> Unit = {},
-    val onApplyServerPort: () -> Unit = {},
-    val onRefreshIps: () -> Unit = {},
+
     val onTemperature: (Float) -> Unit = {},
     val onTopP: (Float) -> Unit = {},
     val onMaxTokens: (Int) -> Unit = {},

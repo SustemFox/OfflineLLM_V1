@@ -111,7 +111,7 @@ internal fun LlmTab(
                     "Жёсткий потолок длины ответа (в токенах ≈ кусках слова). " +
                         "Меньше = короче ответ и быстрее конец генерации. " +
                         "⚡ Сильно влияет на время: 4B CPU ~0.5–3 tok/s на OP7 — " +
-                        "128 tok ≈ десятки секунд, 512 tok ≈ минуты. HTTP API может переопределить max_tokens.",
+                        "128 tok ≈ десятки секунд, 512 tok ≈ минуты.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -168,9 +168,9 @@ internal fun LlmTab(
                 Text("n_ctx: ${state.nCtx}")
                 Text(
                     "Размер контекстного окна (промпт + ответ в токенах). " +
-                        "Больше = длиннее system/история/HTTP-диалоги влезают, но " +
+                        "Больше = длиннее system/история влезают, но " +
                         "больше RAM и чуть медленнее prefill (обработка входа). " +
-                        "⚡ 2048 быстрее и легче; 4096 удобнее для API; 8192 на 4B+телефоне может не влезть в память. " +
+                        "⚡ 2048 быстрее и легче; 4096 удобнее для длинных диалогов; 8192 на 4B+телефоне может не влезть в память. " + +
                         "На скорость каждого нового токена влияет слабее, чем max tokens.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

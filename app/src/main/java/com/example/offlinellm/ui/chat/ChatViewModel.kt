@@ -14,11 +14,9 @@ import com.example.offlinellm.data.local.AppLogger
 import com.example.offlinellm.data.local.AppPreferences
 import com.example.offlinellm.data.local.ChatHistoryStore
 import com.example.offlinellm.data.local.ModelsDirectoryManager
-import com.example.offlinellm.data.local.NetworkUtils
 import com.example.offlinellm.data.remote.HfGgufFile
 import com.example.offlinellm.data.remote.HfHubClient
 import com.example.offlinellm.data.repository.LocalLlmRepository
-import com.example.offlinellm.data.service.LlmHttpServer
 import com.example.offlinellm.data.service.ModelDownloadService
 import com.example.offlinellm.di.AppProvider
 import com.example.offlinellm.domain.model.DownloadState
@@ -44,8 +42,8 @@ class ChatViewModel(
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
-    private var httpServer: LlmHttpServer? = null
     private var saveJob: Job? = null
+
     private var genJob: Job? = null
 
     private val downloadReceiver = object : BroadcastReceiver() {
@@ -94,7 +92,6 @@ class ChatViewModel(
             text = "Привет! Я твой оффлайн-помощник.\n" +
                 "📱 Движок: llama.cpp\n" +
                 "🧠 Блок мышления + настройки LLM в ⚙\n" +
-                "🌐 HTTP: IP и порт показываются при включении\n" +
                 "1) ⚙ → скачай модель\n" +
                 "2) «Выбрать»\n" +
                 "3) Пиши в чат",
@@ -116,9 +113,7 @@ class ChatViewModel(
             accelPref = AppPreferences.getAccelPref(app),
             storagePath = ModelsDirectoryManager.getStorageLabel(app),
             hasCustomStorage = ModelsDirectoryManager.hasCustomPath(app),
-            serverPort = AppPreferences.getServerPort(app),
-            serverPortInput = AppPreferences.getServerPort(app).toString(),
-            localIps = NetworkUtils.getLocalIpv4Addresses(app),
+
             temperature = AppPreferences.getTemperature(app),
             topP = AppPreferences.getTopP(app),
             maxTokens = AppPreferences.getMaxTokens(app),
@@ -196,7 +191,7 @@ class ChatViewModel(
                 selectedModel = selected,
                 activeBackend = backend,
                 isNativeAvailable = AppProvider.isNativeAvailable(),
-                localIps = NetworkUtils.getLocalIpv4Addresses(application)
+
             )
         }
     }
@@ -207,12 +202,6 @@ class ChatViewModel(
             try {
                 withContext(Dispatchers.IO) {
                     AppProvider.initRealEngine(application, modelPath)
-                }
-                val wasRunning = _uiState.value.isServerRunning
-                val port = _uiState.value.serverPort
-                if (wasRunning) {
-                    stopHttpServer()
-                    startHttpServer(port)
                 }
                 val backend = try {
                     AppProvider.modelRepository.getActiveBackend()
@@ -366,117 +355,7 @@ class ChatViewModel(
         }
     }
 
-    // --- HTTP server ---
-
-    fun startHttpServer(port: Int = _uiState.value.serverPort) {
-        viewModelScope.launch {
-            try {
-                stopHttpServer()
-                val ips = NetworkUtils.getLocalIpv4Addresses(application)
-                val usePort = port.coerceIn(1024, 65535)
-                AppPreferences.setServerPort(application, usePort)
-                val server = LlmHttpServer(
-                    port = usePort,
-                    host = "0.0.0.0",
-                    generate = { userPrompt, systemPrompt, maxTokensOverride ->
-                        applyLiveSampling()
-                        val mt = if (maxTokensOverride > 0) maxTokensOverride
-                        else AppPreferences.getMaxTokens(application)
-                        try {
-                            (AppProvider.llmRepository as? LocalLlmRepository)
-                                ?.applyMaxTokensOverride(mt.coerceIn(16, 2048))
-                        } catch (_: Throwable) {
-                        }
-                        AppProvider.llmRepository.generateResponse(
-                            userPrompt,
-                            systemPrompt.takeIf { it.isNotBlank() }
-                        )
-                    },
-                    nCtxHint = { _uiState.value.nCtx },
-                    cancelGenerate = {
-                        try {
-                            (AppProvider.llmRepository as? LocalLlmRepository)?.cancelGeneration()
-                        } catch (_: Throwable) {}
-                        try {
-                            com.example.offlinellm.llama.LlamaBridge.requestCancelSafe()
-                        } catch (_: Throwable) {}
-                    },
-                    defaultMaxTokens = { AppPreferences.getMaxTokens(application) },
-                    modelId = {
-                        _uiState.value.selectedModel?.name
-                            ?: _uiState.value.selectedModel?.id
-                            ?: "local-gguf"
-                    }
-                )
-                withContext(Dispatchers.IO) { server.start() }
-                httpServer = server
-                val ipLine = if (ips.isEmpty()) {
-                    "IP не найден (Wi‑Fi?). Пробуй http://127.0.0.1:$usePort/v1 с устройства"
-                } else {
-                    ips.joinToString("\n") { ip ->
-                        "• ${NetworkUtils.openaiBase(ip, usePort)}"
-                    }
-                }
-                updateState {
-                    copy(
-                        isServerRunning = true,
-                        serverPort = usePort,
-                        serverPortInput = usePort.toString(),
-                        localIps = ips,
-                        serverBaseUrls = ips.map { NetworkUtils.openaiBase(it, usePort) }
-                    )
-                }
-                systemMsg(
-                    "🌐 HTTP-сервер запущен на 0.0.0.0:$usePort\n" +
-                        "OpenAI base URL:\n$ipLine\n" +
-                        "Проверка: GET /health · GET /v1/models\n" +
-                        "Чат: POST /v1/chat/completions\n" +
-                        "Пример: curl -s http://IP:$usePort/v1/models"
-                )
-            } catch (e: Exception) {
-                AppLogger.e("ChatVM", "startHttpServer failed: ${e.message}", e)
-                updateState { copy(isServerRunning = false) }
-                systemMsg("Не удалось запустить HTTP-сервер: ${e.message}")
-            }
-        }
-    }
-
-    fun stopHttpServer() {
-        try {
-            httpServer?.stop()
-        } catch (e: Exception) {
-            AppLogger.e("ChatVM", "stopHttpServer: ${e.message}", e)
-        }
-        httpServer = null
-        if (_uiState.value.isServerRunning) {
-            updateState { copy(isServerRunning = false, serverBaseUrls = emptyList()) }
-        }
-    }
-
     fun updateInput(text: String) = updateState { copy(inputText = text) }
-
-    fun setServerPortInput(text: String) {
-        updateState { copy(serverPortInput = text.filter { it.isDigit() }.take(5)) }
-    }
-
-    fun applyServerPort() {
-        val p = _uiState.value.serverPortInput.toIntOrNull()
-        if (p == null || p !in 1024..65535) {
-            systemMsg("Порт должен быть числом 1024–65535.")
-            return
-        }
-        AppPreferences.setServerPort(application, p)
-        updateState { copy(serverPort = p, serverPortInput = p.toString()) }
-        if (_uiState.value.isServerRunning) {
-            startHttpServer(p)
-        } else {
-            systemMsg("Порт сохранён: $p (применится при старте сервера).")
-        }
-    }
-
-    fun refreshLocalIps() {
-        updateState { copy(localIps = NetworkUtils.getLocalIpv4Addresses(application)) }
-    }
 
     // --- LLM / system prefs ---
 
@@ -775,23 +654,6 @@ class ChatViewModel(
         updateState { copy(downloadState = DownloadState.Idle, downloadingModelId = null) }
     }
 
-    fun toggleServer(enabled: Boolean) {
-        if (enabled) {
-            val model = _uiState.value.selectedModel
-            when {
-                model != null && model.isDownloaded && _uiState.value.isRealEngine ->
-                    startHttpServer(_uiState.value.serverPort)
-                model != null && model.isDownloaded ->
-                    systemMsg("Сначала «Выбрать» у скачанной модели.")
-                else ->
-                    systemMsg("Сначала скачай и выбери модель.")
-            }
-        } else {
-            stopHttpServer()
-            systemMsg("HTTP-сервер остановлен.")
-        }
-    }
-
     fun deleteModel(model: LlmModel) {
         viewModelScope.launch {
             try {
@@ -800,7 +662,6 @@ class ChatViewModel(
                 }
                 if (_uiState.value.selectedModel?.id == model.id) {
                     AppProvider.initFake(application)
-                    stopHttpServer()
                     updateState { copy(isRealEngine = false) }
                 }
                 systemMsg("🗑 ${model.name} удалена.")
@@ -920,7 +781,7 @@ class ChatViewModel(
         genJob?.cancel()
         saveJob?.cancel()
         ChatHistoryStore.save(application, _uiState.value.messages)
-        stopHttpServer()
+
     }
 
     class Factory(private val application: Application) : ViewModelProvider.Factory {

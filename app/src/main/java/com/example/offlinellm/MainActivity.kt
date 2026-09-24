@@ -55,8 +55,8 @@ fun AppRoot() {
                     state = state,
                     callbacks = SettingsCallbacks(
                         onBack = { navController.popBackStack() },
-                        onToggleServer = viewModel::toggleServer,
                         onDownloadModel = viewModel::downloadModel,
+
                         onCancelDownload = viewModel::cancelDownload,
                         onDeleteModel = viewModel::deleteModel,
                         onSelectModel = viewModel::selectModel,
@@ -77,9 +77,6 @@ fun AppRoot() {
                         onHfToggleManualUrl = viewModel::toggleHfManualUrl,
                         onClearChat = viewModel::clearChat,
                         onAccelPref = viewModel::setAccelPref,
-                        onServerPortInput = viewModel::setServerPortInput,
-                        onApplyServerPort = viewModel::applyServerPort,
-                        onRefreshIps = viewModel::refreshLocalIps,
                         onTemperature = viewModel::setTemperature,
                         onTopP = viewModel::setTopP,
                         onMaxTokens = viewModel::setMaxTokens,

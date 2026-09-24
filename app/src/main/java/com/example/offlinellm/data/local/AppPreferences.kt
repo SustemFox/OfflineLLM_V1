@@ -16,7 +16,7 @@ object AppPreferences {
     private const val KEY_LAST_HF_URL = "last_hf_url"
     private const val KEY_SELECTED_MODEL = "selected_model_id"
     private const val KEY_ACCEL_PREF = "accel_pref"
-    private const val KEY_SERVER_PORT = "server_port"
+
     private const val KEY_TEMPERATURE = "llm_temperature"
     private const val KEY_TOP_P = "llm_top_p"
     private const val KEY_MAX_TOKENS = "llm_max_tokens"
@@ -95,13 +95,6 @@ object AppPreferences {
             "auto"
         } else pref
         p(ctx).edit().putString(KEY_ACCEL_PREF, v).apply()
-    }
-
-    fun getServerPort(ctx: Context): Int =
-        p(ctx).getInt(KEY_SERVER_PORT, 8080).coerceIn(1024, 65535)
-
-    fun setServerPort(ctx: Context, port: Int) {
-        p(ctx).edit().putInt(KEY_SERVER_PORT, port.coerceIn(1024, 65535)).apply()
     }
 
     fun getTemperature(ctx: Context): Float =
