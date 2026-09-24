@@ -36,8 +36,9 @@ private enum class SettingsTab(val title: String) {
 fun SettingsScreen(
     state: ChatUiState,
     callbacks: SettingsCallbacks,
+    initialTab: Int = 0,
 ) {
-    var tabIndex by remember { mutableIntStateOf(0) }
+    var tabIndex by remember { mutableIntStateOf(initialTab.coerceIn(0, tabs.lastIndex)) }
     val tabs = SettingsTab.entries
 
     Scaffold(

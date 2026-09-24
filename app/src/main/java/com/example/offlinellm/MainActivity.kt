@@ -9,6 +9,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -47,7 +49,18 @@ fun AppRoot() {
                 ChatScreen(
                     viewModel = viewModel,
                     state = state,
-                    onOpenSettings = { navController.navigate("settings") }
+                    onOpenSettings = { navController.navigate("settings") },
+                    onOpenNotifications = { navController.navigate("notifications") }
+                )
+            }
+            composable("notifications") {
+                SettingsScreen(
+                    state = state,
+                    initialTab = 2,
+                    callbacks = SettingsCallbacks(
+                        onBack = { navController.popBackStack() },
+                        onClearNotifications = viewModel::clearNotifications,
+                    ),
                 )
             }
             composable("settings") {

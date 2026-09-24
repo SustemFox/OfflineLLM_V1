@@ -46,6 +46,7 @@ fun ChatScreen(
     viewModel: ChatViewModel,
     state: ChatUiState,
     onOpenSettings: () -> Unit,
+    onOpenNotifications: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -82,6 +83,9 @@ fun ChatScreen(
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(end = 4.dp)
                         )
+                    }
+                    IconButton(onClick = onOpenNotifications) {
+                        Icon(Icons.Default.Notifications, contentDescription = "Уведомления")
                     }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
