@@ -12,7 +12,8 @@ import com.example.offlinellm.domain.model.Message
  * Kept separate from [ChatViewModel] so composables don't depend on the whole VM type.
  */
 data class AppNotification(
-    val id: Long = System.currentTimeMillis(),
+    val id: Long = System.nanoTime(),
+
     val text: String,
     val time: Long = id,
 )
